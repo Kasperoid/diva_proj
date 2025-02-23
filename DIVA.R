@@ -2,9 +2,40 @@ library(dplyr)
 library(lubridate)
 library(sys)
 library("rjson")
+library(httr)
+source("config.R")
+
+# API_KEY от virusTotal
+api_url <- 'https://www.virustotal.com/api/v3/ip_addresses/'
+
+# Получение рейтинга и страны через запрос на API virusTotal (v3)
+check_ip_virustotal <- function(ip, saved_ips_df) {
+  reqUrl <- sprintf("%s%s", api_url, ip)
+  response <- GET(url=reqUrl, add_headers(.headers=c('X-Apikey' = api_key)))
+  Sys.sleep(5)
+  if (status_code(response) == 200) {
+    content_data <- content(response, as="parsed")
+    
+    country = content_data$data$attributes$country
+    values <- unlist(content_data$data$attributes$`last_analysis_stats`)
+    max_index <- which.max(values)
+    rating <- names(values)[max_index]
+    
+    new_row <- data.frame(ip = ip,
+                          country = country,
+                          rating = rating,
+                          stringsAsFactors = FALSE)
+    result_df <- rbind(saved_ips_df, new_row)
+    write.csv(result_df, "saved_ips.csv", row.names = FALSE)
+    return(result_df)
+  } else {
+    next # Тут момент спорный, если запрос не прошел - вообще не записывать целую строчку фрейма в итоговый датафрейм или, например, записать в страну и рейтинг - NA???
+  }
+}
 
 # Обработка JSON в формат датафрейма
 process_wireshark_json <- function(json_file) {
+  saved_ips_df <- read.csv("saved_ips.csv", stringsAsFactors = FALSE)
   # Чтение JSON файла
   data <- fromJSON(paste(readLines(json_file), collapse=""))
   
@@ -20,6 +51,10 @@ process_wireshark_json <- function(json_file) {
     sync = character(),
     name_dst = character(),
     name_src = character(),
+    rating_src = character(),
+    rating_dst = character(),
+    country_dst = character(),
+    country_src = character(),
     protocol = character(),
     stringsAsFactors = FALSE
   )
@@ -66,6 +101,24 @@ process_wireshark_json <- function(json_file) {
       next
     }
     
+    # Проверка найден ли ip в датафрейме сохраненных, если нет - то отправка запроса на сервер virusTotal
+    if (nrow(saved_ips_df[saved_ips_df$ip == dst, ]) == 0) {
+      saved_ips_df <- check_ip_virustotal(dst, saved_ips_df)
+    } 
+    rating_dst = saved_ips_df[saved_ips_df$ip == dst, ]$rating
+    country_dst =  saved_ips_df[saved_ips_df$ip == dst, ]$country
+    
+    if (nrow(saved_ips_df[saved_ips_df$ip == src, ]) == 0) {
+      saved_ips_df <- check_ip_virustotal(src, saved_ips_df)
+    }
+    rating_src = saved_ips_df[saved_ips_df$ip == src, ]$rating
+    country_src =  saved_ips_df[saved_ips_df$ip == src, ]$country
+    
+    print(dst)
+    print(src)
+    print(rating_src)
+    print(country_src)
+    
     # Добавление строки в фрейм
     new_row <- data.frame(
       dst = dst,
@@ -78,6 +131,10 @@ process_wireshark_json <- function(json_file) {
       sync = sync,
       name_dst = name_dst,
       name_src = name_src,
+      rating_src = rating_src,
+      rating_dst = rating_dst,
+      country_dst = country_dst,
+      country_src = country_src,
       protocol = protocol,
       stringsAsFactors = FALSE
     )
@@ -86,6 +143,15 @@ process_wireshark_json <- function(json_file) {
   }
   
   return(result)
+}
+
+# Проверка существует ли файл с сохраненными ip
+if (!file.exists('saved_ips.csv')) {
+  empty_df <- data.frame(ip = character(),
+                         country = character(),
+                         rating = numeric(),
+                         stringsAsFactors = FALSE)
+  write.csv(empty_df, "saved_ips.csv", row.names = FALSE)
 }
 
 json_file <- "testMiniJson.json"
