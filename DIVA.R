@@ -5,7 +5,6 @@ library("rjson")
 library(httr)
 source("config.R")
 
-# API_KEY от virusTotal
 api_url <- 'https://www.virustotal.com/api/v3/ip_addresses/'
 
 # Получение рейтинга и страны через запрос на API virusTotal (v3)
@@ -16,13 +15,13 @@ check_ip_virustotal <- function(ip, saved_ips_df) {
   if (status_code(response) == 200) {
     content_data <- content(response, as="parsed")
     
-    country = content_data$data$attributes$country
+    country <- content_data$data$attributes$country
     values <- unlist(content_data$data$attributes$`last_analysis_stats`)
     max_index <- which.max(values)
     rating <- names(values)[max_index]
     
     new_row <- data.frame(ip = ip,
-                          country = country,
+                          country = ifelse(is.null(country), 'unfound', country),
                           rating = rating,
                           stringsAsFactors = FALSE)
     result_df <- rbind(saved_ips_df, new_row)
@@ -95,8 +94,9 @@ process_wireshark_json <- function(json_file) {
     }
     
     # Получение протокола
-    protocol <- if (!is.null(layers$frame$`frame.protocols`)) {
-      layers$frame$`frame.protocols`
+    if (!is.null(layers$frame$`frame.protocols`)) {
+      split_str <- strsplit(layers$frame$`frame.protocols`, ':')[[1]]
+      protocol <- split_str[length(split_str)]
     } else {
       next
     }
@@ -113,11 +113,6 @@ process_wireshark_json <- function(json_file) {
     }
     rating_src = saved_ips_df[saved_ips_df$ip == src, ]$rating
     country_src =  saved_ips_df[saved_ips_df$ip == src, ]$country
-    
-    print(dst)
-    print(src)
-    print(rating_src)
-    print(country_src)
     
     # Добавление строки в фрейм
     new_row <- data.frame(
@@ -154,7 +149,7 @@ if (!file.exists('saved_ips.csv')) {
   write.csv(empty_df, "saved_ips.csv", row.names = FALSE)
 }
 
-json_file <- "testMiniJson.json"
+json_file <- "testMediumJson.json"
 result_df <- process_wireshark_json(json_file)
 
 write.csv(result_df, "processed_packets.csv", row.names = FALSE)
