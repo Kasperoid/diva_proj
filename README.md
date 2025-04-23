@@ -1,4 +1,4 @@
-# <span><p align="center">Система обнаружения вторжений</p><p align="center">![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&pause=1200&color=3DC3C9&width=140&height=30&vCenter=true&size=32&lines=D.I.V.A)<p></span>
+# <span><p align="center">Система обнаружения вторжений</p><p align="center">![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&pause=1200&color=3DC3C9&width=140&height=30&vCenter=true&size=32&lines=D.I.V.A)<p><p align="center"><img src="./readme_img/logo-round.png"/></p></span>
 
 ## Какие проблемы решает
 Обнаружение DDoS-атак (SYN-flood)
