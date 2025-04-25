@@ -1,4 +1,5 @@
 library(shiny)
+library(leaflet)
 
 ui <- fluidPage(
   tags$style(HTML("
@@ -56,6 +57,8 @@ ui <- fluidPage(
         class="downloand-container",
         downloadButton("download_html", "Скачать HTML"),
       )
-    )
+    ),
+    
+    leafletOutput("map"),
   )
 )
