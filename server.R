@@ -286,6 +286,24 @@ server <- function(input, output, session) {
         
         output$map <- renderLeaflet({ base_map() })
       }
+      
+      output$download_html <- downloadHandler(
+        file_name <- paste0(
+          format(Sys.time(), "%Y-%m-%d_%H-%M-%S"),
+          "_report.html"
+        ),
+        content = function(file) {
+          res <- rmarkdown::render(
+            "report_conf/report_template_html.Rmd",
+            params = list(
+              draw_map = base_map,
+              #ip_table = base_ip_table
+            )
+          )
+          file.rename(res, file)
+        }
+      )
+      
     }
   })
 }
