@@ -1,5 +1,6 @@
 library(shiny)
 library(leaflet)
+library(DT)
 
 ui <- fluidPage(
   tags$style(HTML("
@@ -38,6 +39,31 @@ ui <- fluidPage(
       display: flex;
       flex-direction: column;
       gap: 5px;
+    }
+      
+    .table-container {
+      margin-top: 30px;
+    }
+    
+    .pie-charts-container {
+      display: flex;
+      flex-wrap: wrap;
+      margin: 15px 0;
+      gap: 10px;
+      justify-content: center;
+    }
+    
+    .chart-pie {
+      flex: 50%;
+      max-width: 45%;
+      border: 1px solid #dbdbdb;
+      border-radius: 10px;
+      padding: 15px;
+    }
+    
+    .chart-pie:hover {
+      box-shadow: 0px 0px 14px 0px rgba(34, 60, 80, 0.2);
+      transition: 0.3s ease-in-out;
     }"
   )),
   
@@ -60,5 +86,18 @@ ui <- fluidPage(
     ),
     
     leafletOutput("map"),
+    
+    div(class="table-container", DTOutput("ip_table")),
+    
+    div(class = "pie-charts-container",
+        div(class='chart-pie', plotlyOutput("pie_chart_protocols")),
+        
+        div(class='chart-pie', plotlyOutput("pie_chart_top_src_ip")),
+        
+        div(class='chart-pie', plotlyOutput("pie_chart_top_dst_ip")),
+        
+        div(class='chart-pie', plotlyOutput("pie_chart_top_src_port")),
+        
+        div(class='chart-pie', plotlyOutput("pie_chart_top_dst_port")))
   )
 )

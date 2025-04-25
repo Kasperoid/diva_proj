@@ -61,8 +61,6 @@ server <- function(input, output, session) {
       src_port = character(),
       ack = character(),
       sync = character(),
-      name_dst = character(),
-      name_src = character(),
       rating_src = character(),
       rating_dst = character(),
       country_dst = character(),
@@ -79,8 +77,6 @@ server <- function(input, output, session) {
       if (!is.null(layers$ip)) {
         src <- layers$ip$`ip.src`
         dst <- layers$ip$`ip.dst`
-        name_src <- layers$eth$`eth.src_tree`$`eth.addr.oui_resolved`
-        name_dst <- layers$eth$`eth.dst_tree`$`eth.addr.oui_resolved`
       } else {
         next
       }
@@ -139,8 +135,6 @@ server <- function(input, output, session) {
         src_port = src_port,
         ack = ack,
         sync = sync,
-        name_dst = name_dst,
-        name_src = name_src,
         rating_src = rating_src,
         rating_dst = rating_dst,
         country_dst = country_dst,
@@ -304,6 +298,130 @@ server <- function(input, output, session) {
         }
       )
       
+      base_ip_table <- function() {
+        datatable(
+          parsed_data_csv,
+          rownames = FALSE,
+          options = list(
+            pageLength = 5,
+            lengthMenu = c(5, 10, 15, 20),
+            scrollX = TRUE,
+            autoWidth = TRUE
+          )
+        )
+      }
+      
+      output$ip_table <- renderDT({ base_ip_table() })
+      
+      filtered_data <- reactive({
+        req(input$ip_table_rows_all)
+        df <- parsed_data_csv[input$ip_table_rows_all, ]
+        rownames(df) <- NULL
+        df
+      })
+      
+      base_ip_table <- function() {
+        datatable(
+          parsed_data_csv,
+          rownames = FALSE,
+          options = list(
+            pageLength = 5,
+            lengthMenu = c(5, 10, 15, 20),
+            scrollX = TRUE,
+            autoWidth = TRUE
+          )
+        )
+      }
+      
+      output$pie_chart_protocols <- renderPlotly({
+        protocols_table <- parsed_data_csv %>% select(protocol) %>% group_by(protocol) %>% summarise(count = n())
+        
+        plot_ly( protocols_table, 
+                 labels = ~protocol, 
+                 values = ~count, 
+                 type = 'pie',
+                 hole = 0.6,
+                 textinfo = 'none',
+                 hoverinfo = 'text',
+                 text = ~paste("Protocol:", protocol, "\nCount:", count),
+                 marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
+          layout(title = "Protocols",
+                 showlegend = TRUE,
+                 hoverlabel = list(bgcolor = "white", 
+                                   font = list(color = "black")))
+      })
+      
+      output$pie_chart_top_src_ip <- renderPlotly({
+        ip_src_table <- parsed_data_csv %>% select(src) %>% group_by(src) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        
+        plot_ly(ip_src_table, 
+                labels = ~src, 
+                values = ~count, 
+                type = 'pie',
+                hole = 0.6,
+                textinfo = 'none',
+                hoverinfo = 'text',
+                text = ~paste("IP:", src, "\nCount:", count),
+                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
+          layout(title = "Top 10 source IPs",
+                 showlegend = TRUE,
+                 hoverlabel = list(bgcolor = "white", 
+                                   font = list(color = "black")))
+      })
+      
+      output$pie_chart_top_dst_ip <- renderPlotly({
+        ip_dst_table <- parsed_data_csv %>% select(dst) %>% group_by(dst) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        
+        plot_ly(ip_dst_table, 
+                labels = ~dst, 
+                values = ~count, 
+                type = 'pie',
+                hole = 0.6,
+                textinfo = 'none',
+                hoverinfo = 'text',
+                text = ~paste("IP:", dst, "\nCount:", count),
+                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
+          layout(title = "Top 10 distance IPs",
+                 showlegend = TRUE,
+                 hoverlabel = list(bgcolor = "white", 
+                                   font = list(color = "black")))
+      })
+      
+      output$pie_chart_top_src_port <- renderPlotly({
+        port_src_table <- parsed_data_csv %>% select(src_port) %>% group_by(src_port) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        
+        plot_ly(port_src_table, 
+                labels = ~src_port, 
+                values = ~count, 
+                type = 'pie',
+                hole = 0.6,
+                textinfo = 'none',
+                hoverinfo = 'text',
+                text = ~paste("Port:", src_port, "\nCount:", count),
+                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
+          layout(title = "Top 10 source ports",
+                 showlegend = TRUE,
+                 hoverlabel = list(bgcolor = "white", 
+                                   font = list(color = "black")))
+      })
+      
+      output$pie_chart_top_dst_port <- renderPlotly({
+        port_dst_table <- parsed_data_csv %>% select(dst_port) %>% group_by(dst_port) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        
+        plot_ly(port_dst_table, 
+                labels = ~dst_port, 
+                values = ~count, 
+                type = 'pie',
+                hole = 0.6,
+                textinfo = 'none',
+                hoverinfo = 'text',
+                text = ~paste("Port:", dst_port, "\nCount:", count),
+                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
+          layout(title = "Top 10 distance ports",
+                 showlegend = TRUE,
+                 hoverlabel = list(bgcolor = "white", 
+                                   font = list(color = "black")))
+      })
     }
   })
 }
