@@ -155,6 +155,41 @@ server <- function(input, output, session) {
     return(result)
   }
   
+  create_map_points <- function(ips_data, world_data) {
+    ips_data <- ips_data %>% filter(country_src != "unfound")
+    if (nrow(ips_data) != 0) {
+      ip_counts <- ips_data %>% 
+        group_by(country_src) %>%
+        summarise(ip_count = n())
+      
+      mean_count <- mean(ip_counts$ip_count)
+      
+      ip_counts <- ip_counts %>%
+        mutate(
+          group = case_when(
+            ip_count <= mean_count ~ "small",
+            ip_count > mean_count & ip_count <= 1.6 * mean_count ~ "medium",
+            ip_count > 1.6 * mean_count ~ "big",
+          )
+        )
+      
+      merged_data <- left_join(ip_counts, world_data, by=c("country_src" = "code"))
+      
+      result <- merged_data %>%
+        select(lat, long, name, country_src, ip_count, group, country.etc)
+      
+      return(result)
+    } else {
+      return(ips_data)
+    }
+  }
+  
+  color_palette <- colorFactor(
+    palette = c("yellow", "orange", "red"), 
+    domain = c('small', 'medium', 'big'),
+    ordered = TRUE
+  )
+  
   options(shiny.maxRequestSize = 30 * 1024^2) # Ограничение загружаемого файла до 30МБ
   
   if (!file.exists('saved_ips.csv')) {
@@ -197,5 +232,60 @@ server <- function(input, output, session) {
         showNotification('Произошла непредвиденная ошибка!', type = "error")
       }
     })
+    
+    if (file_path != FALSE) {
+      parsed_data_csv <- read.csv(file_path, stringsAsFactors = FALSE)
+      map_points <- create_map_points(parsed_data_csv, world.cities)
+      
+      if (nrow(map_points) > 0) {
+        group_ranges <- map_points %>%
+          group_by(group) %>%
+          summarise(
+            min_ip = min(ip_count),
+            max_ip = max(ip_count),
+          ) %>%
+          mutate(
+            label = case_when(
+              group == "small" ~ paste0("Small (", min_ip, "-", max_ip, ")"),
+              group == "medium" ~ paste0("Medium (", min_ip, "-", max_ip, ")"),
+              group == "big" ~ paste0("Big (", min_ip, "-", max_ip, ")")
+            )
+          )
+        
+        legend_colors <- c()
+        
+        if (nrow(group_ranges) == 1) {
+          legend_colors <- c("red")
+        } else if (nrow(group_ranges) == 2) {
+          legend_colors <- c("red", "yellow")
+        } else {
+          legend_colors <- c("red", "orange", "yellow")
+        }
+        
+        base_map <- function() {
+          leaflet(map_points) %>% 
+            addTiles() %>% # Добавление подложки
+            setView(0.34580993652344, 50.6252978589571, zoom = 3) %>% # Установка начального зума и координат
+            addCircleMarkers(
+              ~long, ~lat,
+              color = ~color_palette(group),
+              stroke = FALSE,
+              fillOpacity = 0.8,
+              radius = 8,
+              label = ~country.etc,
+              popup = ~paste("<b>Количество ip-адресов:</b>", ip_count)
+            ) %>%
+            addLegend(
+              "bottomright", 
+              colors = legend_colors,
+              labels = group_ranges$label,
+              title = "Группы (диапазон IP-адресов)",
+              opacity = 1
+            )
+        }
+        
+        output$map <- renderLeaflet({ base_map() })
+      }
+    }
   })
 }
