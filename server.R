@@ -3,7 +3,6 @@ library(stringr)
 library(dplyr)
 library(lubridate)
 library(sys)
-library("rjson")
 library(httr)
 source("config.R")
 library(countrycode)
@@ -16,6 +15,7 @@ library(plotly)
 api_url <- 'https://www.virustotal.com/api/v3/ip_addresses/'
 
 server <- function(input, output, session) {
+  
   # Получение рейтинга и страны через запрос на API virusTotal (v3)
   check_ip_virustotal <- function(ip, saved_ips_df) { # ip - айпи, saved_ips_df - таблица с сохраненными айпишниками
     reqUrl <- sprintf("%s%s", api_url, ip)
@@ -44,109 +44,54 @@ server <- function(input, output, session) {
     }
   }
   
-  # Обработка JSON в формат датафрейма
-  process_wireshark_json <- function(json_file) {
-    saved_ips_df <- read.csv("saved_ips.csv", stringsAsFactors = FALSE)
-    # Чтение JSON файла
-    data <- fromJSON(paste(readLines(json_file), collapse=""))
-    
-    # Пустой датафрейм 
-    result <- data.frame(
-      dst = character(),
-      src = character(),
-      length = character(),
-      date = as.POSIXct(character()),
-      time = as.POSIXct(character()),
-      dst_port = character(),
-      src_port = character(),
-      ack = character(),
-      sync = character(),
-      rating_src = character(),
-      rating_dst = character(),
-      country_dst = character(),
-      country_src = character(),
-      protocol = character(),
-      stringsAsFactors = FALSE
+  # Функция для парсинга файла conn.log от Zeek
+  parse_zeek_conn_log <- function(file_path) {
+    conn_data <- read_delim(
+      file_path,
+      delim = "\t",
+      comment = "#",
+      col_names = FALSE
     )
     
-    # Обработка каждого фрейма из JSON, если какого то значения нет - пропуск пакета, он не записывается в результирующий фрейм
-    for (packet in data) {
-      layers <- packet$`_source`$layers
+    # Извлечение заголовков из файла
+    headers <- readLines(file_path)
+    headers <- headers[grep("^#fields", headers)]
+    headers <- sub("^#fields\\s+", "", headers)
+    headers <- strsplit(headers, "\\t")[[1]]
+    
+    # Присвоение имен столбцов
+    colnames(conn_data) <- headers
+    
+    # Фильтрация, убираю лишние столбцы
+    conn_data <- conn_data %>% mutate(
+      date = format(as.POSIXct(ts, origin = "1970-01-01"), "%d.%m.%y"),
+      time = format(as.POSIXct(ts, origin = "1970-01-01"), "%H:%M:%S")) %>% 
+      rename(src = id.orig_h, src_port = id.orig_p, dst = id.resp_h, dst_port = id.resp_p, protocol = proto, is_local_src = local_orig, is_local_dst = local_resp) %>%
+      mutate(rating_src = NA, country_src = NA, rating_dst = NA, country_dst = NA) %>%
+      select(uid, date, time, src, src_port, is_local_src, rating_src, country_src, dst, dst_port, is_local_dst, rating_dst, country_dst, protocol, conn_state, history)
+    
+    # Чтение файла с сохраненными айпишниками
+    saved_ips_df <- read.csv("saved_ips.csv", stringsAsFactors = FALSE)
+    
+    for (i in 1:nrow(conn_data)) {
+      row <- conn_data[i, ]
       
-      # Блок с получением Ip src и dst + названия
-      if (!is.null(layers$ip)) {
-        src <- layers$ip$`ip.src`
-        dst <- layers$ip$`ip.dst`
-      } else {
-        next
+      if (nrow(saved_ips_df[saved_ips_df$ip == row$dst, ]) == 0 && row$is_local_dst == FALSE) {
+        saved_ips_df <- check_ip_virustotal(row$dst, saved_ips_df)
       }
       
-      # Получение даты и времени сразу их форматирование + получение длины пакета
-      if (!is.null(layers$frame)) {
-        getDate <- as.POSIXct(as.numeric(layers$frame$`frame.time_epoch`), origin="1970-01-01")
-        date <- format(getDate, "%d.%m.%Y")
-        time <- format(getDate, "%H:%M:%S")
-        length <- layers$frame$`frame.len`
-      } else {
-        next
+      conn_data[i, ]$rating_dst <- ifelse(row$is_local_dst == TRUE, "local", saved_ips_df[saved_ips_df$ip == row$dst, ]$rating)
+      conn_data[i, ]$country_dst <- ifelse(row$is_local_dst == TRUE, "local", saved_ips_df[saved_ips_df$ip == row$dst, ]$country)
+      
+      if (nrow(saved_ips_df[saved_ips_df$ip == row$src, ]) == 0 && row$is_local_src == FALSE) {
+        saved_ips_df <- check_ip_virustotal(row$src, saved_ips_df)
       }
       
-      # Получение порта и флагов sync ack
-      if (!is.null(layers$tcp)) {
-        dst_port <- layers$tcp$`tcp.dstport`
-        src_port <- layers$tcp$`tcp.srcport`
-        ack <- ifelse(!is.null(layers$tcp$`tcp.flags_tree`$`tcp.flags.ack`) && 
-                        layers$tcp$`tcp.flags_tree`$`tcp.flags.ack` == "1", "1", "0")
-        sync <- ifelse(!is.null(layers$tcp$`tcp.flags_tree`$`tcp.flags.syn`) && 
-                         layers$tcp$`tcp.flags_tree`$`tcp.flags.syn` == "1", "1", "0")
-      } else {
-        next
-      }
-      
-      # Получение протокола
-      if (!is.null(layers$frame$`frame.protocols`)) {
-        split_str <- strsplit(layers$frame$`frame.protocols`, ':')[[1]]
-        protocol <- split_str[length(split_str)]
-      } else {
-        next
-      }
-      
-      # Проверка найден ли ip в датафрейме сохраненных, если нет - то отправка запроса на сервер virusTotal
-      if (nrow(saved_ips_df[saved_ips_df$ip == dst, ]) == 0) {
-        saved_ips_df <- check_ip_virustotal(dst, saved_ips_df)
-      } 
-      rating_dst = saved_ips_df[saved_ips_df$ip == dst, ]$rating
-      country_dst =  saved_ips_df[saved_ips_df$ip == dst, ]$country
-      
-      if (nrow(saved_ips_df[saved_ips_df$ip == src, ]) == 0) {
-        saved_ips_df <- check_ip_virustotal(src, saved_ips_df)
-      }
-      rating_src = saved_ips_df[saved_ips_df$ip == src, ]$rating
-      country_src =  saved_ips_df[saved_ips_df$ip == src, ]$country
-      
-      # Добавление строки в фрейм
-      new_row <- data.frame(
-        dst = dst,
-        src = src,
-        length = length,
-        date = date,
-        time = time,
-        dst_port = dst_port,
-        src_port = src_port,
-        ack = ack,
-        sync = sync,
-        rating_src = rating_src,
-        rating_dst = rating_dst,
-        country_dst = country_dst,
-        country_src = country_src,
-        protocol = protocol,
-        stringsAsFactors = FALSE
-      )
-      
-      result <- rbind(result, new_row)
+      conn_data[i, ]$rating_src <- ifelse(row$is_local_src == TRUE, "local", saved_ips_df[saved_ips_df$ip == row$src, ]$rating)
+      conn_data[i, ]$country_src <- ifelse(row$is_local_src == TRUE, "local", saved_ips_df[saved_ips_df$ip == row$src, ]$country)
     }
     
-    return(result)
+    return(conn_data)
   }
   
   create_map_points <- function(ips_data, world_data) {
@@ -207,14 +152,19 @@ server <- function(input, output, session) {
     
     file_path <- FALSE
     
+    if (!dir.exists('./data')) {
+      dir.create('data')
+    }
+    
     tryCatch({
-      if (ext == 'json') {
+      if (ext == 'log') {
         file_name <- paste0(
           format(Sys.time(), "%Y-%m-%d_%H-%M-%S"),
           "_processed_data.csv"
         )
         file_path <- paste('data', file_name, sep="/")
-        parsed_csv <- process_wireshark_json(input$fileData$datapath)
+        
+        parsed_csv <- parse_zeek_conn_log(input$fileData$datapath)
         write.csv(parsed_csv, paste('data', file_name, sep="/"), row.names = FALSE)
         showNotification('Обработка прошла успешно!', type = "default")
         
@@ -298,20 +248,18 @@ server <- function(input, output, session) {
         }
       )
       
-      base_ip_table <- function() {
+      output$ip_table <- renderDT({ 
         datatable(
-          parsed_data_csv,
-          rownames = FALSE,
-          options = list(
-            pageLength = 5,
-            lengthMenu = c(5, 10, 15, 20),
-            scrollX = TRUE,
-            autoWidth = TRUE
-          )
+        parsed_data_csv %>% select(-uid),
+        rownames = FALSE,
+        options = list(
+          pageLength = 5,
+          lengthMenu = c(5, 10, 15, 20),
+          scrollX = TRUE,
+          autoWidth = TRUE
         )
-      }
-      
-      output$ip_table <- renderDT({ base_ip_table() })
+        ) 
+      })
       
       filtered_data <- reactive({
         req(input$ip_table_rows_all)

@@ -75,9 +75,9 @@ ui <- fluidPage(
     
     div(
       class="options-container",
-      fileInput('fileData', 'Загрузите csv/json файл',
+      fileInput('fileData', 'Загрузите csv/log файл',
                 multiple = FALSE,
-                accept = c("text/csv", ".csv", ".json")),
+                accept = c("text/csv", ".csv", ".log")),
       
       div(
         class="downloand-container",
