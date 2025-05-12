@@ -1,6 +1,7 @@
 library(shiny)
 library(stringr)
 library(dplyr)
+library(tidyr)
 library(lubridate)
 library(sys)
 library(httr)
@@ -11,6 +12,8 @@ library(DT)
 library(rmarkdown)
 library(ggplot2)
 library(plotly)
+library(shinybusy)
+library(vroom)
 
 api_url <- 'https://www.virustotal.com/api/v3/ip_addresses/'
 
@@ -46,7 +49,8 @@ server <- function(input, output, session) {
   
   # Функция для парсинга файла conn.log от Zeek
   parse_zeek_conn_log <- function(file_path) {
-    conn_data <- read_delim(
+    show_spinner()
+    conn_data <- vroom(
       file_path,
       delim = "\t",
       comment = "#",
@@ -71,7 +75,7 @@ server <- function(input, output, session) {
       select(uid, date, time, src, src_port, is_local_src, rating_src, country_src, dst, dst_port, is_local_dst, rating_dst, country_dst, protocol, conn_state, history)
     
     # Чтение файла с сохраненными айпишниками
-    saved_ips_df <- read.csv("saved_ips.csv", stringsAsFactors = FALSE)
+    saved_ips_df <- vroom("saved_ips.csv")
     
     for (i in 1:nrow(conn_data)) {
       row <- conn_data[i, ]
@@ -178,7 +182,8 @@ server <- function(input, output, session) {
     })
     
     if (file_path != FALSE) {
-      parsed_data_csv <- read.csv(file_path, stringsAsFactors = FALSE)
+      parsed_data_csv <- vroom(file_path)
+      
       map_points <- create_map_points(parsed_data_csv, world.cities)
       
       if (nrow(map_points) > 0) {
@@ -256,9 +261,23 @@ server <- function(input, output, session) {
           pageLength = 5,
           lengthMenu = c(5, 10, 15, 20),
           scrollX = TRUE,
-          autoWidth = TRUE
+          autoWidth = TRUE,
+          initComplete = JS(
+            "function(settings, json) {",
+            "  $(this.api().table().header()).css({'background-color': '#F82B26', 'color': '#0E1F27', 'fontSize': '18px'});",
+            "}"
+          )
         )
-        ) 
+        ) %>%
+        formatStyle(
+          columns = names(parsed_data_csv %>% select(-uid)),
+          target = "cell",
+          color = "#4ECDC4",
+          border = "1px solid #4ECDC4",
+          fontFamily = "Courier New, monospace",
+          fontWeight =  700,
+          fontSize = '18px'
+        )
       })
       
       filtered_data <- reactive({
@@ -291,12 +310,15 @@ server <- function(input, output, session) {
                  hole = 0.6,
                  textinfo = 'none',
                  hoverinfo = 'text',
-                 text = ~paste("Протокол:", protocol, "\nКол-во:", count),
-                 marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Протоколы",
+                 text = ~paste("<b>Протокол:</b>", protocol, "\n<b>Кол-во:</b>", count),
+                 marker = list(line = list(color = '#4ECDC4', width = 1))) %>%
+          layout(title = list(text = "<b>Протоколы</b>", x = 0.5, y = 1),
+                 font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
                  showlegend = TRUE,
-                 hoverlabel = list(bgcolor = "white", 
-                                   font = list(color = "black")))
+                 hoverlabel = list(bgcolor = "#4ECDC4", 
+                                   font = list(color = "#0E1F27", size = 16)),
+                 paper_bgcolor = "#0E1F27",
+                 plot_bgcolor = "#0E1F27")
       })
       
       output$pie_chart_top_src_ip <- renderPlotly({
@@ -309,12 +331,15 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("IP:", src, "\nКол-во:", count),
-                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Ip-отправления",
+                text = ~paste("<b>IP:</b>", src, "\n<b>Кол-во:</b>", count),
+                marker = list(line = list(color = '#4ECDC4', width = 1))) %>%
+          layout(title = list(text = "<b>Ip-отправления</b>", x = 0.5, y = 1),
+                 font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
                  showlegend = TRUE,
-                 hoverlabel = list(bgcolor = "white", 
-                                   font = list(color = "black")))
+                 hoverlabel = list(bgcolor = "#4ECDC4", 
+                                   font = list(color = "#0E1F27", size = 16)),
+                 paper_bgcolor = "#0E1F27",
+                 plot_bgcolor = "#0E1F27")
       })
       
       output$pie_chart_top_dst_ip <- renderPlotly({
@@ -327,12 +352,15 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("IP:", dst, "\nКол-во:", count),
-                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Ip-назначения",
+                text = ~paste("<b>IP:</b>", dst, "\n<b>Кол-во:</b>", count),
+                marker = list(line = list(color = '#4ECDC4', width = 1))) %>%
+          layout(title = list(text = "<b>Ip-назначения</b>", x = 0.5, y = 1),
+                 font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
                  showlegend = TRUE,
-                 hoverlabel = list(bgcolor = "white", 
-                                   font = list(color = "black")))
+                 hoverlabel = list(bgcolor = "#4ECDC4", 
+                                   font = list(color = "#0E1F27", size = 16)),
+                 paper_bgcolor = "#0E1F27",
+                 plot_bgcolor = "#0E1F27")
       })
       
       output$pie_chart_top_src_port <- renderPlotly({
@@ -345,12 +373,15 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("Port:", src_port, "\nКол-во:", count),
-                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Порты отправления",
+                text = ~paste("<b>Port:</b>", src_port, "\n<b>Кол-во:</b>", count),
+                marker = list(line = list(color = '#4ECDC4', width = 1))) %>%
+          layout(title = list(text = "<b>Порты отправления</b>", x = 0.5, y = 1),
+                 font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
                  showlegend = TRUE,
-                 hoverlabel = list(bgcolor = "white", 
-                                   font = list(color = "black")))
+                 hoverlabel = list(bgcolor = "#4ECDC4", 
+                                   font = list(color = "#0E1F27", size = 16)),
+                 paper_bgcolor = "#0E1F27",
+                 plot_bgcolor = "#0E1F27")
       })
       
       output$pie_chart_top_dst_port <- renderPlotly({
@@ -363,13 +394,18 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("Port:", dst_port, "\nCount:", count),
-                marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Порты назначения",
+                text = ~paste("<b>Port:</b>", dst_port, "\n<b>Count:</b>", count),
+                marker = list(line = list(color = "#4ECDC4", width = 1))) %>%
+          layout(title = list(text = "<b>Порты назначения</b>", x = 0.5, y = 1),
+                 font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
                  showlegend = TRUE,
-                 hoverlabel = list(bgcolor = "white", 
-                                   font = list(color = "black")))
+                 hoverlabel = list(bgcolor = "#4ECDC4", 
+                                   font = list(color = "#0E1F27", size = 16)),
+                 paper_bgcolor = "#0E1F27",
+                 plot_bgcolor = "#0E1F27")
       })
+      
+      
       
       # Графики
       # График активности ip-адреса
@@ -442,39 +478,42 @@ server <- function(input, output, session) {
         plot_ly(data, x = ~time, y = ~total_connections, 
                 type = 'bar',
                 name = 'Всего соединений',
-                marker = list(color = 'rgba(55, 128, 191, 0.7)',
-                              line = list(color = 'rgba(55, 128, 191, 1.0)', width = 1))) %>%
+                marker = list(color = 'rgba(78, 205, 196, 0.4)',
+                              line = list(color = 'rgba(78, 205, 196, 1.0)', width = 1))) %>%
           layout(
-            title = paste("Активность IP-адреса", input$selectedIP, 
-                          if(input$ipType == "src") "(источник)" else "(получатель)"),
+            title = list(text = paste("<b>Активность IP-адреса", input$selectedIP, 
+                          if(input$ipType == "src") "(источник)" else "(получатель)", "</b>"),
+                          x = 0.5, y = 1),
+            font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
             xaxis = list(
-              title = "Время",
+              title = "<b>Время</b>",
               type = "category",
               tickangle = 45,
               categoryorder = "array",
               categoryarray = ~time
             ),
             yaxis = list(title = y_title),
-            margin = list(b = 150),  # Увеличиваем отступ снизу для длинных меток
+            margin = list(b = 150),
             hoverlabel = list(
               bgcolor = "white",
               font = list(size = 12)
             ),
             hovermode = "x",
-            barmode = 'group'
+            barmode = 'group',
+            paper_bgcolor = "#0E1F27",
+            plot_bgcolor = "#0E1F27"
           )
       })
       
+      
       # График SYN
-      
-      
       df <- reactive({
         parsed_data_csv
       })
         
         # Обновляем выборки для фильтров
         observe({
-          data <- df()
+          data <- df() %>% filter(protocol == 'tcp')
           
           updateSelectInput(session, "date_select", 
                             choices = unique(data$date),
@@ -552,27 +591,37 @@ server <- function(input, output, session) {
           
           plot_ly(data) %>%
             add_lines(x = ~time_group, y = ~syn_count, name = "SYN", 
-                      line = list(color = 'red'), yaxis = "y1") %>%
+                      line = list(color = '#F82B26'), yaxis = "y1") %>%
             add_lines(x = ~time_group, y = ~ack_count, name = "ACK", 
-                      line = list(color = 'blue'), yaxis = "y1") %>%
+                      line = list(color = '#4ECDC4'), yaxis = "y1") %>%
             layout(
-              title = "Сравнение количества SYN и ACK пакетов",
+              font = list(color = '#4ECDC4', size = 18, family = 'Consolas'),
+              title = list(text = "<b>Сравнение количества SYN и ACK пакетов</b>", x = 0.5, y = 1),
               xaxis = list(
                 title = "Время",
                 type = "date",
-                tickformat = time_format
+                tickformat = time_format,
+                gridcolor = 'rgba(78, 205, 196, 0.4)'
               ),
               yaxis = list(
                 title = "Количество пакетов",
-                side = "left"
+                side = "left",
+                gridcolor = 'rgba(78, 205, 196, 0.4)'
               ),
               legend = list(x = 0.1, y = 0.9),
-              hovermode = "x unified"
+              hovermode = "x unified",
+              paper_bgcolor = "#0E1F27",
+              plot_bgcolor = "#0E1F27"
             )
         })
       
-      
-      
+        output$file_loaded <- reactive({
+          !is.null(parsed_data_csv)
+        })
+        
+        outputOptions(output, "file_loaded", suspendWhenHidden = FALSE)
+        
+        hide_spinner()
     }
   })
 }
