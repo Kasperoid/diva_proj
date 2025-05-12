@@ -64,7 +64,14 @@ ui <- fluidPage(
     .chart-pie:hover {
       box-shadow: 0px 0px 14px 0px rgba(34, 60, 80, 0.2);
       transition: 0.3s ease-in-out;
-    }"
+    }
+    
+    .graph-container {
+      border: 1px solid #dbdbdb;
+      border-radius: 10px;
+      padding: 15px;
+    }
+                  "
   )),
   
   div(
@@ -98,6 +105,47 @@ ui <- fluidPage(
         
         div(class='chart-pie', plotlyOutput("pie_chart_top_src_port")),
         
-        div(class='chart-pie', plotlyOutput("pie_chart_top_dst_port")))
+        div(class='chart-pie', plotlyOutput("pie_chart_top_dst_port"))),
+    
+    div( class="graph-container",
+         sidebarLayout(
+           sidebarPanel(
+             radioButtons("ipType", "Тип IP-адреса:",
+                          choices = c("Источник (src)" = "src",
+                                      "Получатель (dst)" = "dst"),
+                          selected = "src"),
+             selectInput("selectedIP", "Выберите IP-адрес:",
+                         choices = NULL),
+             selectInput("timeGrouping", "Группировка времени:",
+                         choices = c("По секундам" = "sec",
+                                     "По минутам" = "min",
+                                     "По часам" = "hour"))
+           ),
+           mainPanel(
+             plotlyOutput("ipActivityPlot", height = "800px")
+           )
+         )
+    ),
+    
+    sidebarLayout(
+      sidebarPanel(
+        width = 3,
+        selectInput("date_select", "Выберите дату:", choices = NULL),
+        selectInput("ip_select", "Выберите IP назначения:", 
+                    choices = NULL, multiple = TRUE),
+        selectInput("port_select", "Выберите порт назначения:", 
+                    choices = NULL, multiple = TRUE),
+        radioButtons("time_group", "Группировка по времени:",
+                     choices = c("Часы" = "hour", 
+                                 "Минуты" = "minute", 
+                                 "Секунды" = "second"),
+                     selected = "minute")
+      ),
+      mainPanel(
+        width = 9,
+        plotlyOutput("syn_ack_plot", height = "600px")
+      )
+    )
+    
   )
 )

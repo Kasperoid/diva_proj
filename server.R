@@ -291,16 +291,16 @@ server <- function(input, output, session) {
                  hole = 0.6,
                  textinfo = 'none',
                  hoverinfo = 'text',
-                 text = ~paste("Protocol:", protocol, "\nCount:", count),
+                 text = ~paste("Протокол:", protocol, "\nКол-во:", count),
                  marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Protocols",
+          layout(title = "Протоколы",
                  showlegend = TRUE,
                  hoverlabel = list(bgcolor = "white", 
                                    font = list(color = "black")))
       })
       
       output$pie_chart_top_src_ip <- renderPlotly({
-        ip_src_table <- parsed_data_csv %>% select(src) %>% group_by(src) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        ip_src_table <- parsed_data_csv %>% select(src) %>% group_by(src) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(ip_src_table, 
                 labels = ~src, 
@@ -309,16 +309,16 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("IP:", src, "\nCount:", count),
+                text = ~paste("IP:", src, "\nКол-во:", count),
                 marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Top 10 source IPs",
+          layout(title = "Ip-отправления",
                  showlegend = TRUE,
                  hoverlabel = list(bgcolor = "white", 
                                    font = list(color = "black")))
       })
       
       output$pie_chart_top_dst_ip <- renderPlotly({
-        ip_dst_table <- parsed_data_csv %>% select(dst) %>% group_by(dst) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        ip_dst_table <- parsed_data_csv %>% select(dst) %>% group_by(dst) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(ip_dst_table, 
                 labels = ~dst, 
@@ -327,16 +327,16 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("IP:", dst, "\nCount:", count),
+                text = ~paste("IP:", dst, "\nКол-во:", count),
                 marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Top 10 distance IPs",
+          layout(title = "Ip-назначения",
                  showlegend = TRUE,
                  hoverlabel = list(bgcolor = "white", 
                                    font = list(color = "black")))
       })
       
       output$pie_chart_top_src_port <- renderPlotly({
-        port_src_table <- parsed_data_csv %>% select(src_port) %>% group_by(src_port) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        port_src_table <- parsed_data_csv %>% select(src_port) %>% group_by(src_port) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(port_src_table, 
                 labels = ~src_port, 
@@ -345,16 +345,16 @@ server <- function(input, output, session) {
                 hole = 0.6,
                 textinfo = 'none',
                 hoverinfo = 'text',
-                text = ~paste("Port:", src_port, "\nCount:", count),
+                text = ~paste("Port:", src_port, "\nКол-во:", count),
                 marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Top 10 source ports",
+          layout(title = "Порты отправления",
                  showlegend = TRUE,
                  hoverlabel = list(bgcolor = "white", 
                                    font = list(color = "black")))
       })
       
       output$pie_chart_top_dst_port <- renderPlotly({
-        port_dst_table <- parsed_data_csv %>% select(dst_port) %>% group_by(dst_port) %>% summarise(count = n()) %>% arrange(desc(count)) %>% head(10)
+        port_dst_table <- parsed_data_csv %>% select(dst_port) %>% group_by(dst_port) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(port_dst_table, 
                 labels = ~dst_port, 
@@ -365,11 +365,214 @@ server <- function(input, output, session) {
                 hoverinfo = 'text',
                 text = ~paste("Port:", dst_port, "\nCount:", count),
                 marker = list(line = list(color = '#FFFFFF', width = 1))) %>%
-          layout(title = "Top 10 distance ports",
+          layout(title = "Порты назначения",
                  showlegend = TRUE,
                  hoverlabel = list(bgcolor = "white", 
                                    font = list(color = "black")))
       })
+      
+      # Графики
+      # График активности ip-адреса
+      processed_data_ips <- reactive({
+        df <- parsed_data_csv
+        
+        df <- df %>%
+          mutate(
+            datetime = as.POSIXct(paste(date, time), format = "%d.%m.%Y %H:%M:%S"),
+            time_sec = format(datetime, "%H:%M:%S"),
+            time_min = format(datetime, "%H:%M"),
+            time_hour = format(datetime, "%H:00")
+          )
+        
+        df
+      })
+      
+      # Обновляем список IP-адресов в зависимости от выбранного типа (src или dst)
+      observe({
+        df <- processed_data_ips()
+        ip_column <- if(input$ipType == "src") "src" else "dst"
+        
+        updateSelectInput(session, "selectedIP", 
+                          choices = unique(df[[ip_column]]))
+      })
+      
+      # Подготовка данных для графика
+      plot_data_ips <- reactive({
+        req(input$selectedIP)
+        df <- processed_data_ips()
+        
+        # Фильтруем по выбранному IP (src или dst)
+        ip_column <- input$ipType
+        filtered <- df %>% 
+          filter(!!sym(ip_column) == input$selectedIP)
+        
+        # Группируем в зависимости от выбранного временного разрешения
+        time_col <- case_when(
+          input$timeGrouping == "sec" ~ "time_sec",
+          input$timeGrouping == "min" ~ "time_min",
+          input$timeGrouping == "hour" ~ "time_hour"
+        )
+        
+        # Определяем, какой столбец использовать для подсчета уникальных значений
+        count_column <- if(ip_column == "src") "dst" else "src"
+        
+        grouped <- filtered %>%
+          group_by(time = !!sym(time_col)) %>%
+          summarise(
+            total_connections = n(),
+            unique_connections = n_distinct(!!sym(count_column)),
+            .groups = "drop"
+          ) %>%
+          arrange(time)
+        
+        grouped
+      })
+      
+      output$ipActivityPlot <- renderPlotly({
+        data <- plot_data_ips()
+        req(nrow(data) > 0)
+        
+        # Определяем заголовок оси Y в зависимости от типа IP
+        y_title <- if(input$ipType == "src") {
+          "Количество получателей (dst)"
+        } else {
+          "Количество отправителей (src)"
+        }
+        
+        plot_ly(data, x = ~time, y = ~total_connections, 
+                type = 'bar',
+                name = 'Всего соединений',
+                marker = list(color = 'rgba(55, 128, 191, 0.7)',
+                              line = list(color = 'rgba(55, 128, 191, 1.0)', width = 1))) %>%
+          layout(
+            title = paste("Активность IP-адреса", input$selectedIP, 
+                          if(input$ipType == "src") "(источник)" else "(получатель)"),
+            xaxis = list(
+              title = "Время",
+              type = "category",
+              tickangle = 45,
+              categoryorder = "array",
+              categoryarray = ~time
+            ),
+            yaxis = list(title = y_title),
+            margin = list(b = 150),  # Увеличиваем отступ снизу для длинных меток
+            hoverlabel = list(
+              bgcolor = "white",
+              font = list(size = 12)
+            ),
+            hovermode = "x",
+            barmode = 'group'
+          )
+      })
+      
+      # График SYN
+      
+      
+      df <- reactive({
+        parsed_data_csv
+      })
+        
+        # Обновляем выборки для фильтров
+        observe({
+          data <- df()
+          
+          updateSelectInput(session, "date_select", 
+                            choices = unique(data$date),
+                            selected = unique(data$date)[1])
+          
+          updateSelectInput(session, "ip_select",
+                            choices = unique(data$dst),
+                            selected = unique(data$dst)[1])
+          
+          updateSelectInput(session, "port_select",
+                            choices = unique(data$dst_port),
+                            selected = unique(data$dst_port)[1])
+        })
+        
+        # Подготовка данных для графиков
+        plot_data <- reactive({
+          req(input$date_select)
+          
+          data <- df() %>%
+            filter(date == input$date_select)
+          
+          if (!is.null(input$ip_select) && length(input$ip_select) > 0) {
+            data <- data %>% filter(dst %in% input$ip_select)
+          }
+          
+          if (!is.null(input$port_select) && length(input$port_select) > 0) {
+            data <- data %>% filter(dst_port %in% input$port_select)
+          }
+          
+          # Создаем datetime колонку для группировки
+          data <- data %>%
+            mutate(datetime = dmy_hms(paste(date, time)))
+          
+          # Группируем по выбранному временному интервалу
+          if (input$time_group == "hour") {
+            data <- data %>%
+              mutate(time_group = floor_date(datetime, "hour"))
+          } else if (input$time_group == "minute") {
+            data <- data %>%
+              mutate(time_group = floor_date(datetime, "minute"))
+          } else {
+            data <- data %>%
+              mutate(time_group = floor_date(datetime, "second"))
+          }
+          
+          # Считаем количество SYN и ACK
+          syn_data <- data %>%
+            filter(str_detect(history, "S") & !str_detect(history, "A")) %>%
+            group_by(time_group) %>%
+            summarise(syn_count = n(), .groups = "drop")
+          
+          ack_data <- data %>%
+            filter(str_detect(history, "ShA")) %>%
+            group_by(time_group) %>%
+            summarise(ack_count = n(), .groups = "drop")
+          
+          # Объединяем данные
+          full_join(syn_data, ack_data, by = "time_group") %>%
+            replace_na(list(syn_count = 0, ack_count = 0)) %>%
+            arrange(time_group)
+        })
+        
+        # Создаем комбинированный график
+        output$syn_ack_plot <- renderPlotly({
+          data <- plot_data()
+          
+          if (nrow(data) == 0) {
+            return(plotly_empty() %>% layout(title = "Нет данных для отображения"))
+          }
+          
+          # Определяем формат подписей в зависимости от группировки
+          time_format <- if (input$time_group == "hour") "%H:%M" 
+          else if (input$time_group == "minute") "%H:%M" 
+          else "%H:%M:%S"
+          
+          plot_ly(data) %>%
+            add_lines(x = ~time_group, y = ~syn_count, name = "SYN", 
+                      line = list(color = 'red'), yaxis = "y1") %>%
+            add_lines(x = ~time_group, y = ~ack_count, name = "ACK", 
+                      line = list(color = 'blue'), yaxis = "y1") %>%
+            layout(
+              title = "Сравнение количества SYN и ACK пакетов",
+              xaxis = list(
+                title = "Время",
+                type = "date",
+                tickformat = time_format
+              ),
+              yaxis = list(
+                title = "Количество пакетов",
+                side = "left"
+              ),
+              legend = list(x = 0.1, y = 0.9),
+              hovermode = "x unified"
+            )
+        })
+      
+      
+      
     }
   })
 }
