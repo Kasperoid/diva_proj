@@ -236,40 +236,22 @@ server <- function(input, output, session) {
         output$map <- renderLeaflet({ base_map() })
       }
       
-      output$download_html <- downloadHandler(
-        file_name <- paste0(
-          format(Sys.time(), "%Y-%m-%d_%H-%M-%S"),
-          "_report.html"
-        ),
-        content = function(file) {
-          res <- rmarkdown::render(
-            "report_conf/report_template_html.Rmd",
-            params = list(
-              draw_map = base_map,
-              #ip_table = base_ip_table
+      ips_table <- function() {
+        datatable(
+          parsed_data_csv %>% select(-uid),
+          rownames = FALSE,
+          options = list(
+            pageLength = 5,
+            lengthMenu = c(5, 10, 15, 20),
+            scrollX = TRUE,
+            autoWidth = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "  $(this.api().table().header()).css({'background-color': '#F82B26', 'color': '#0E1F27', 'fontSize': '18px'});",
+              "}"
             )
           )
-          file.rename(res, file)
-        }
-      )
-      
-      output$ip_table <- renderDT({ 
-        datatable(
-        parsed_data_csv %>% select(-uid),
-        rownames = FALSE,
-        options = list(
-          pageLength = 5,
-          lengthMenu = c(5, 10, 15, 20),
-          scrollX = TRUE,
-          autoWidth = TRUE,
-          initComplete = JS(
-            "function(settings, json) {",
-            "  $(this.api().table().header()).css({'background-color': '#F82B26', 'color': '#0E1F27', 'fontSize': '18px'});",
-            "}"
-          )
-        )
-        ) %>%
-        formatStyle(
+        ) %>% formatStyle(
           columns = names(parsed_data_csv %>% select(-uid)),
           target = "cell",
           color = "#4ECDC4",
@@ -278,7 +260,9 @@ server <- function(input, output, session) {
           fontWeight =  700,
           fontSize = '18px'
         )
-      })
+      }
+      
+      output$ip_table <- renderDT({ ips_table() })
       
       filtered_data <- reactive({
         req(input$ip_table_rows_all)
@@ -287,20 +271,7 @@ server <- function(input, output, session) {
         df
       })
       
-      base_ip_table <- function() {
-        datatable(
-          parsed_data_csv,
-          rownames = FALSE,
-          options = list(
-            pageLength = 5,
-            lengthMenu = c(5, 10, 15, 20),
-            scrollX = TRUE,
-            autoWidth = TRUE
-          )
-        )
-      }
-      
-      output$pie_chart_protocols <- renderPlotly({
+      pie_chart_protocols <- function() {
         protocols_table <- parsed_data_csv %>% select(protocol) %>% group_by(protocol) %>% summarise(count = n())
         
         plot_ly( protocols_table, 
@@ -319,9 +290,9 @@ server <- function(input, output, session) {
                                    font = list(color = "#0E1F27", size = 16)),
                  paper_bgcolor = "#0E1F27",
                  plot_bgcolor = "#0E1F27")
-      })
+      }
       
-      output$pie_chart_top_src_ip <- renderPlotly({
+      pie_chart_top_src_ip <- function() {
         ip_src_table <- parsed_data_csv %>% select(src) %>% group_by(src) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(ip_src_table, 
@@ -340,9 +311,9 @@ server <- function(input, output, session) {
                                    font = list(color = "#0E1F27", size = 16)),
                  paper_bgcolor = "#0E1F27",
                  plot_bgcolor = "#0E1F27")
-      })
+      }
       
-      output$pie_chart_top_dst_ip <- renderPlotly({
+      pie_chart_top_dst_ip <- function() {
         ip_dst_table <- parsed_data_csv %>% select(dst) %>% group_by(dst) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(ip_dst_table, 
@@ -361,9 +332,9 @@ server <- function(input, output, session) {
                                    font = list(color = "#0E1F27", size = 16)),
                  paper_bgcolor = "#0E1F27",
                  plot_bgcolor = "#0E1F27")
-      })
+      }
       
-      output$pie_chart_top_src_port <- renderPlotly({
+      pie_chart_top_src_port <- function() {
         port_src_table <- parsed_data_csv %>% select(src_port) %>% group_by(src_port) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(port_src_table, 
@@ -382,9 +353,9 @@ server <- function(input, output, session) {
                                    font = list(color = "#0E1F27", size = 16)),
                  paper_bgcolor = "#0E1F27",
                  plot_bgcolor = "#0E1F27")
-      })
+      }
       
-      output$pie_chart_top_dst_port <- renderPlotly({
+      pie_chart_top_dst_port <- function() {
         port_dst_table <- parsed_data_csv %>% select(dst_port) %>% group_by(dst_port) %>% summarise(count = n()) %>% arrange(desc(count))
         
         plot_ly(port_dst_table, 
@@ -403,9 +374,17 @@ server <- function(input, output, session) {
                                    font = list(color = "#0E1F27", size = 16)),
                  paper_bgcolor = "#0E1F27",
                  plot_bgcolor = "#0E1F27")
-      })
+      }
       
+      output$pie_chart_protocols <- renderPlotly({ pie_chart_protocols() })
       
+      output$pie_chart_top_src_ip <- renderPlotly({ pie_chart_top_src_ip() })
+      
+      output$pie_chart_top_dst_ip <- renderPlotly({ pie_chart_top_dst_ip() })
+      
+      output$pie_chart_top_src_port <- renderPlotly({ pie_chart_top_src_port() })
+      
+      output$pie_chart_top_dst_port <- renderPlotly({ pie_chart_top_dst_port() })
       
       # Графики
       # График активности ip-адреса
@@ -464,7 +443,7 @@ server <- function(input, output, session) {
         grouped
       })
       
-      output$ipActivityPlot <- renderPlotly({
+      ip_activity_plot <- function() {
         data <- plot_data_ips()
         req(nrow(data) > 0)
         
@@ -482,8 +461,8 @@ server <- function(input, output, session) {
                               line = list(color = 'rgba(78, 205, 196, 1.0)', width = 1))) %>%
           layout(
             title = list(text = paste("<b>Активность IP-адреса", input$selectedIP, 
-                          if(input$ipType == "src") "(источник)" else "(получатель)", "</b>"),
-                          x = 0.5, y = 1),
+                                      if(input$ipType == "src") "(источник)" else "(получатель)", "</b>"),
+                         x = 0.5, y = 1),
             font = list(color = "#4ECDC4", size = 18, family = 'Consolas'),
             xaxis = list(
               title = "<b>Время</b>",
@@ -503,8 +482,9 @@ server <- function(input, output, session) {
             paper_bgcolor = "#0E1F27",
             plot_bgcolor = "#0E1F27"
           )
-      })
+      }
       
+      output$ipActivityPlot <- renderPlotly({ ip_activity_plot() })
       
       # График SYN
       df <- reactive({
@@ -576,8 +556,7 @@ server <- function(input, output, session) {
             arrange(time_group)
         })
         
-        # Создаем комбинированный график
-        output$syn_ack_plot <- renderPlotly({
+        syn_ack_plot <- function() {
           data <- plot_data()
           
           if (nrow(data) == 0) {
@@ -613,7 +592,10 @@ server <- function(input, output, session) {
               paper_bgcolor = "#0E1F27",
               plot_bgcolor = "#0E1F27"
             )
-        })
+        }
+        
+        # Создаем комбинированный график
+        output$syn_ack_plot <- renderPlotly({ syn_ack_plot() })
       
         output$file_loaded <- reactive({
           !is.null(parsed_data_csv)
@@ -622,6 +604,30 @@ server <- function(input, output, session) {
         outputOptions(output, "file_loaded", suspendWhenHidden = FALSE)
         
         hide_spinner()
+        
+        output$download_html <- downloadHandler(
+          file_name <- paste0(
+            format(Sys.time(), "%Y-%m-%d_%H-%M-%S"),
+            "_report.html"
+          ),
+          content = function(file) {
+            res <- rmarkdown::render(
+              "report_conf/report_template_html.Rmd",
+              params = list(
+                draw_map = base_map,
+                draw_ips_table = ips_table,
+                draw_chart_protocols = pie_chart_protocols,
+                draw_chart_top_src_ip = pie_chart_top_src_ip,
+                draw_chart_top_dst_ip = pie_chart_top_dst_ip,
+                draw_chart_top_src_port = pie_chart_top_src_port,
+                draw_chart_top_dst_port = pie_chart_top_dst_port,
+                draw_ip_activity = ip_activity_plot,
+                draw_syn_ack_plot = syn_ack_plot
+              )
+            )
+            file.rename(res, file)
+          }
+        )
     }
   })
 }

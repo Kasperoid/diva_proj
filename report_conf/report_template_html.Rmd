@@ -6,13 +6,41 @@ output:
     code_folding: show
 params:
   draw_map: NULL
-  ip_table: NULL
+  draw_ips_table: NULL
+  draw_chart_protocols: NULL,
+  draw_chart_top_src_ip: NULL,
+  draw_chart_top_dst_ip: NULL,
+  draw_chart_top_src_port: NULL,
+  draw_chart_top_dst_port: NULL,
+  draw_ip_activity: NULL,
+  draw_syn_ack_plot: NULL
 ---
 
 ```{r, echo=FALSE, error=FALSE, warning=FALSE}
 if (!is.null(params$draw_map))
   params$draw_map()
 
-#if (!is.null(params$ip_table))
- # params$ip_table()
+if (!is.null(params$draw_ips_table))
+  params$draw_ips_table()
+
+if (!is.null(params$draw_chart_protocols))
+  params$draw_chart_protocols()
+
+if (!is.null(params$drwa_chart_top_src_ip))
+  params$draw_chart_top_src_ip()
+
+if (!is.null(params$draw_chart_top_dst_ip))
+  params$draw_chart_top_dst_ip()
+
+if (!is.null(params$draw_chart_top_src_port))
+  params$draw_chart_top_src_port()
+
+if (!is.null(params$draw_chart_top_dst_port))
+  params$draw_chart_top_dst_port()
+
+if (!is.null(params$draw_ip_activity))
+  params$draw_ip_activity()
+
+if (!is.null(params$draw_syn_ack_plot))
+  params$draw_syn_ack_plot()
 ```
