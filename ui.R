@@ -204,6 +204,8 @@ ui <- fluidPage(
           
           div(class='chart-pie', plotlyOutput("pie_chart_top_dst_port"))),
       
+      div( class="graph-container", plotlyOutput("traffic_plot", height="600px")),
+      
       div( class="graph-container",
          sidebarLayout(
            sidebarPanel(

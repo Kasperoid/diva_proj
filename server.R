@@ -72,7 +72,7 @@ server <- function(input, output, session) {
       time = format(as.POSIXct(ts, origin = "1970-01-01"), "%H:%M:%S")) %>% 
       rename(src = id.orig_h, src_port = id.orig_p, dst = id.resp_h, dst_port = id.resp_p, protocol = proto, is_local_src = local_orig, is_local_dst = local_resp) %>%
       mutate(rating_src = NA, country_src = NA, rating_dst = NA, country_dst = NA) %>%
-      select(uid, date, time, src, src_port, is_local_src, rating_src, country_src, dst, dst_port, is_local_dst, rating_dst, country_dst, protocol, conn_state, history)
+      select(uid, date, time, src, src_port, orig_ip_bytes, is_local_src, rating_src, country_src, dst, dst_port, resp_ip_bytes, is_local_dst, rating_dst, country_dst, protocol, conn_state, history)
     
     # Чтение файла с сохраненными айпишниками
     saved_ips_df <- vroom("saved_ips.csv")
@@ -170,8 +170,6 @@ server <- function(input, output, session) {
         
         parsed_csv <- parse_zeek_conn_log(input$fileData$datapath)
         write.csv(parsed_csv, paste('data', file_name, sep="/"), row.names = FALSE)
-        showNotification('Обработка прошла успешно!', type = "default")
-        
       }
       else if(ext == 'csv') {
         file_path <- input$fileData$datapath
@@ -473,11 +471,7 @@ server <- function(input, output, session) {
             ),
             yaxis = list(title = y_title),
             margin = list(b = 150),
-            hoverlabel = list(
-              bgcolor = "white",
-              font = list(size = 12)
-            ),
-            hovermode = "x",
+            hovermode = "x unified",
             barmode = 'group',
             paper_bgcolor = "#0E1F27",
             plot_bgcolor = "#0E1F27"
@@ -596,7 +590,64 @@ server <- function(input, output, session) {
         
         # Создаем комбинированный график
         output$syn_ack_plot <- renderPlotly({ syn_ack_plot() })
-      
+        
+        # График с объемом трафика
+        data_traffic_value <- parsed_data_csv %>% mutate(
+          datetime = dmy_hms(paste(date, time)),
+          sent_bytes = orig_ip_bytes,
+          received_bytes = resp_ip_bytes
+        ) %>% select(datetime, sent_bytes, received_bytes) %>%
+          arrange(datetime)
+        
+        traffic_plot <- function() {
+          req(data_traffic_value)
+          
+          plot_ly(data_traffic_value, x = ~datetime) %>%
+            add_trace(
+              y = ~sent_bytes,
+              name = "Получено",
+              type = 'scatter',
+              mode = 'lines',
+              fill = 'tozeroy',
+              fillcolor = 'rgba(255,107,107,0.5)',
+              line = list(color = 'rgba(255,107,107,1)')
+            ) %>%
+            add_trace(
+              y = ~received_bytes,
+              name = "Отправлено",
+              type = 'scatter',
+              mode = 'lines',
+              fill = 'tozeroy',
+              fillcolor = 'rgba(78,205,196,0.5)',
+              line = list(color = 'rgba(78,205,196,1)')
+            ) %>%
+            layout(
+              hovermode = "x unified",
+              font = list(color = '#4ECDC4', size = 18, family = 'Consolas'),
+              title = list(text = "<b>Объем трафика</b>", x = 0.5, y = 1),
+              yaxis = list(
+                title = "Объем трафика", 
+                gridcolor = "rgba(78, 205, 196, 0.4)",
+                zerolinecolor = "#e1e1e1"
+              ),
+              xaxis = list(
+                title = "Время", 
+                gridcolor = "rgba(78, 205, 196, 0.4)",
+                zerolinecolor = "#e1e1e1"
+              ),
+              plot_bgcolor = "#0E1F27",
+              paper_bgcolor = "#0E1F27",
+              legend = list(
+                x = 0.9,
+                y = 0.9
+              ),
+              showlegend = TRUE
+            )
+        }
+        
+        output$traffic_plot <- renderPlotly({ traffic_plot() })
+        
+        # Лоадер и инпут
         output$file_loaded <- reactive({
           !is.null(parsed_data_csv)
         })
@@ -622,7 +673,8 @@ server <- function(input, output, session) {
                 draw_chart_top_src_port = pie_chart_top_src_port,
                 draw_chart_top_dst_port = pie_chart_top_dst_port,
                 draw_ip_activity = ip_activity_plot,
-                draw_syn_ack_plot = syn_ack_plot
+                draw_syn_ack_plot = syn_ack_plot,
+                draw_traffic_plot = traffic_plot
               )
             )
             file.rename(res, file)

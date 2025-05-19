@@ -3,7 +3,6 @@ output:
   html_document:
     toc: true
     toc_float: true
-    code_folding: show
 params:
   draw_map: NULL
   draw_ips_table: NULL
@@ -13,7 +12,8 @@ params:
   draw_chart_top_src_port: NULL,
   draw_chart_top_dst_port: NULL,
   draw_ip_activity: NULL,
-  draw_syn_ack_plot: NULL
+  draw_syn_ack_plot: NULL,
+  draw_traffic_plot: NULL
 ---
 
 ```{r, echo=FALSE, error=FALSE, warning=FALSE}
@@ -43,4 +43,7 @@ if (!is.null(params$draw_ip_activity))
 
 if (!is.null(params$draw_syn_ack_plot))
   params$draw_syn_ack_plot()
+
+if (!is.null(params$draw_traffic_plot))
+  params$draw_traffic_plot()
 ```
