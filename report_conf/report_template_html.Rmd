@@ -1,8 +1,8 @@
 ---
 output: 
   html_document:
-    toc: true
-    toc_float: true
+    toc: false
+    toc_float: false
 params:
   draw_map: NULL
   draw_ips_table: NULL
@@ -13,37 +13,173 @@ params:
   draw_chart_top_dst_port: NULL,
   draw_ip_activity: NULL,
   draw_syn_ack_plot: NULL,
-  draw_traffic_plot: NULL
+  draw_traffic_plot: NULL,
+  title_file: NULL
 ---
+```{css, echo=FALSE}
+body {
+  font-family: 'Consolas';
+  background-color: #12303B;
+  color: #7ED3D6;
+}
 
-```{r, echo=FALSE, error=FALSE, warning=FALSE}
-if (!is.null(params$draw_map))
-  params$draw_map()
+.main-container {
+  max-width: 100%;
+}
 
-if (!is.null(params$draw_ips_table))
-  params$draw_ips_table()
+.container {
+  background-color: #0E1F27;
+  margin: 15px auto;
+  border-radius: 10px;
+  box-shadow: 0px 0px 14px 9px rgba(126, 211, 214, 0.28);
+  padding: 12px;
+}
 
-if (!is.null(params$draw_chart_protocols))
-  params$draw_chart_protocols()
+.horizontal-line {
+  width: 90%;
+  height: 2px;
+  background-color: #12303B;
+  margin: 5px auto;
+}
 
-if (!is.null(params$drwa_chart_top_src_ip))
-  params$draw_chart_top_src_ip()
+.logo {
+  font-family: 'Courier New';
+  font-size: 64px;
+  margin: 0;
+  text-align: center;
+  font-weight: bold;
+  color: #7ED3D6;
+}
 
-if (!is.null(params$draw_chart_top_dst_ip))
-  params$draw_chart_top_dst_ip()
+.file-name-text {
+  text-align: center;
+}
 
-if (!is.null(params$draw_chart_top_src_port))
-  params$draw_chart_top_src_port()
+.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom {
+  width: auto !important;
+}
 
-if (!is.null(params$draw_chart_top_dst_port))
-  params$draw_chart_top_dst_port()
+#DataTables_Table_0_length, #DataTables_Table_0_filter, #DataTables_Table_0_info, #DataTables_Table_0_paginate {
+  font-size: 18px;
+  color: #7ED3D6;
+}
+    
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover, .dataTables_wrapper .dataTables_paginate .paginate_button.current, .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+  border: 1px solid #7ED3D6;
+  background: #7ED3D6;
+  color: white !important;
+  transition: 0.3s ease;
+}
+    
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
+  border: 1px solid #F82B26;
+  background: #F82B26;
+  color: #0E1F27 !important;
+}
+    
+#DataTables_Table_0_length option {
+  background-color: #0E1F27;
+}
 
-if (!is.null(params$draw_ip_activity))
-  params$draw_ip_activity()
+.pie-charts-container {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 15px 0;
+  gap: 10px;
+  justify-content: center;
+}
+    
+.chart-pie {
+  flex: 50%;
+  max-width: 45%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #4ECDC4;
+}
 
-if (!is.null(params$draw_syn_ack_plot))
-  params$draw_syn_ack_plot()
+.chart-pie:hover {
+  box-shadow: 0px 0px 17px 8px rgba(78, 205, 196, 0.25);
+  transition: 0.3s ease-in-out;
+}
 
-if (!is.null(params$draw_traffic_plot))
-  params$draw_traffic_plot()
+.chart-pie .plotly {
+  width: 100% !important;
+}
+
+.graph-container {
+  border: 1px solid #4ECDC4;
+  border-radius: 10px;
+  padding: 15px;
+}
+
+.graph-container:not(:last-child) {
+  margin-bottom: 10px;
+}
+
+.graph-container .plotly {
+  width: 100% !important;
+}
 ```
+
+<div class="container">
+  <h1 class="logo">D.I.V.A</h1>
+  <div class="horizontal-line"></div>
+  <h2 class="file-name-text">Сгенерированный отчёт: `r params$title_file`</h2>
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_map))
+    params$draw_map()
+  
+  if (!is.null(params$draw_ips_table))
+    params$draw_ips_table()
+  ```
+  <div class="pie-charts-container">
+  <div class="chart-pie">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE, results='asis'}
+  if (!is.null(params$draw_chart_protocols)) 
+    params$draw_chart_protocols()
+  ```
+  </div>
+  <div class="chart-pie">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_chart_top_src_ip))
+    params$draw_chart_top_src_ip()
+  ```
+  </div>
+  <div class="chart-pie">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_chart_top_dst_ip))
+    params$draw_chart_top_dst_ip()
+  ```
+  </div>
+  <div class="chart-pie">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_chart_top_src_port))
+    params$draw_chart_top_src_port()
+  ```
+  </div>
+  <div class="chart-pie">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_chart_top_dst_port))
+    params$draw_chart_top_dst_port()
+  ```
+  </div>
+  </div>
+  <div class="graph-container">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_ip_activity))
+    params$draw_ip_activity()
+  ```
+  </div>
+  <div class="graph-container">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_syn_ack_plot))
+    params$draw_syn_ack_plot()
+  ```
+  </div>
+  <div class="graph-container">
+  ```{r, echo=FALSE, error=FALSE, warning=FALSE}
+  if (!is.null(params$draw_traffic_plot))
+    params$draw_traffic_plot()
+  ```
+  </div>
+</div>

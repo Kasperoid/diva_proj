@@ -658,7 +658,7 @@ server <- function(input, output, session) {
         
         output$download_html <- downloadHandler(
           file_name <- paste0(
-            format(Sys.time(), "%Y-%m-%d_%H-%M-%S"),
+            format(Sys.time(), "%d.%m.%Y_%H:%M:%S"),
             "_report.html"
           ),
           content = function(file) {
@@ -674,7 +674,8 @@ server <- function(input, output, session) {
                 draw_chart_top_dst_port = pie_chart_top_dst_port,
                 draw_ip_activity = ip_activity_plot,
                 draw_syn_ack_plot = syn_ack_plot,
-                draw_traffic_plot = traffic_plot
+                draw_traffic_plot = traffic_plot,
+                title_file = file_name
               )
             )
             file.rename(res, file)
