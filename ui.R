@@ -42,6 +42,28 @@ ui <- fluidPage(
       color: #7ED3D6;
     }
     
+    .map_info_container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .cards-ip-container {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-top: 15px;
+    }
+    
+    .map_container {
+      flex: 1;
+    }
+    
+    .table_cointainer {
+      flex: 0.3;
+    }
+    
     .input-group-btn:first-child>.btn, .input-group .form-control:last-child  {
       font-size: 18px;
       height: auto;
@@ -100,6 +122,25 @@ ui <- fluidPage(
       background-color: #0E1F27;
     }
     
+    .card-info-container {
+      text-align: center;
+      padding: 10px;
+      border: 1px solid #4ECDC4;
+      width: 300px;
+      border-radius: 10px;
+    }
+    
+    #label_uniq_src,  #label_uniq_dst, #label_count_syn, #label_count_ack, #label_src_traffic, #label_dst_traffic{
+      font-size: 22px;
+      color: #7ED3D6;
+    }
+    
+    #text_uniq_src, #text_uniq_dst, #text_count_syn, #text_count_ack, #text_src_traffic, #text_dst_traffic {
+      font-size: 64px;
+      font-weight: 800;
+      color: #F82B26;
+    }
+    
     .pie-charts-container {
       display: flex;
       flex-wrap: wrap;
@@ -116,7 +157,7 @@ ui <- fluidPage(
       border: 1px solid #4ECDC4;
     }
     
-    .chart-pie:hover {
+    .chart-pie:hover, .card-info-container:hover {
       box-shadow: 0px 0px 17px 8px rgba(78, 205, 196, 0.25);
       transition: 0.3s ease-in-out;
     }
@@ -138,9 +179,16 @@ ui <- fluidPage(
     }
     
     .graph-container {
+      flex: 1;
       border: 1px solid #4ECDC4;
       border-radius: 10px;
       padding: 15px;
+    }
+    
+    .traffic-value-container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
     }
     
     .graph-container:last-child {
@@ -152,7 +200,51 @@ ui <- fluidPage(
       color: #0E1F27;
       font-weight: 700
     }
-                  "
+    
+    .traffic-cards-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .anomaly-info-container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    .anomaly-control-container {
+      background-color: inherit !important;
+      border: 1px solid #4ECDC4;
+      border-radius: 10px !important;
+    }
+    
+    .anomaly-control-container .control-label, .anomaly-control-container .irs-min, .anomaly-control-container .irs-max {
+      font-size: 18px;
+      color: #4ECDC4;
+    }
+    
+    .anomaly-control-container .irs-grid-text {
+      font-size: 12px;
+      color: #4ECDC4;
+    }
+    
+    .btn-anomaly-reload {
+      background-color: #4ECDC4;
+      border-color: #4ECDC4;
+    }
+    
+    .irs--shiny .irs-bar {
+      border-top: 1px solid #F82B26;
+      border-bottom: 1px solid #F82B26;
+      background: #F82B26;
+    }
+    
+    .irs-single {
+      background-color: #F82B26 !important;
+    }
+  "
   )),
   
   add_busy_gif(
@@ -189,9 +281,21 @@ ui <- fluidPage(
     
     conditionalPanel(
       condition = "output.file_loaded",
-      leafletOutput("map"),
+      div(class="map_info_container",
+        div(class="map_container", leafletOutput("map")),
+        div(class="info_container", DTOutput("top_map_points")), 
+      ),
       
-      div(class="table-container", DTOutput("ip_table")),
+      div(class="table_container", DTOutput("ip_table")),
+      
+      div(class="cards-ip-container", 
+          div(class="card-info-container", textOutput("label_uniq_src"), textOutput("text_uniq_src")),
+          
+          div(class="card-info-container", textOutput("label_uniq_dst"), textOutput("text_uniq_dst")),
+          
+          div(class="card-info-container", textOutput("label_count_syn"), textOutput("text_count_syn")),
+          
+          div(class="card-info-container", textOutput("label_count_ack"), textOutput("text_count_ack"))),
       
       div(class = "pie-charts-container",
           div(class='chart-pie', plotlyOutput("pie_chart_protocols")),
@@ -204,7 +308,33 @@ ui <- fluidPage(
           
           div(class='chart-pie', plotlyOutput("pie_chart_top_dst_port"))),
       
-      div( class="graph-container", plotlyOutput("traffic_plot", height="600px")),
+      div(class="anomaly-info-container",
+        div(
+          class = "graph-container",
+          plotlyOutput("anomaly_plot")
+        ),
+        div(
+          div(
+            class = "anomaly-control-container",
+            style = "margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+            sliderInput("anomaly_threshold", "Порог аномалии:",
+                        min = 0.1, max = 1.0, value = 0.6, step = 0.05),
+            actionButton("retrain_btn", "Переобучить модель", 
+                         icon = icon("sync-alt"),
+                         class = "btn-anomaly-reload")
+          ) 
+        )
+      ),
+      
+      div(class="traffic-value-container",
+        div( class="graph-container", plotlyOutput("traffic_plot", height="600px")),
+        
+        div(class="traffic-cards-container",
+          div(class="card-info-container", textOutput("label_src_traffic"), textOutput("text_src_traffic")),
+          
+          div(class="card-info-container", textOutput("label_dst_traffic"), textOutput("text_dst_traffic"))
+        ),
+      ),
       
       div( class="graph-container",
          sidebarLayout(

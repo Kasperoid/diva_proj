@@ -14,7 +14,9 @@ library(ggplot2)
 library(plotly)
 library(shinybusy)
 library(vroom)
+library(isotree) 
 
+model_path <- "isolation_forest_model.rds"
 api_url <- 'https://www.virustotal.com/api/v3/ip_addresses/'
 
 server <- function(input, output, session) {
@@ -45,6 +47,39 @@ server <- function(input, output, session) {
     } else {
       next # Тут момент спорный, если запрос не прошел - вообще не записывать целую строчку фрейма в итоговый датафрейм или, например, записать в страну и рейтинг - NA???
     }
+  }
+  
+  # Функция для извлечения признаков
+  extract_features <- function(conn_data, saved_ips) {
+    features <- conn_data %>%
+      group_by(src, dst) %>%
+      mutate(
+        syn_count = sum(str_count(history, "S")),
+        ack_count = sum(str_count(history, "A")),
+        syn_ack_ratio = ifelse(ack_count == 0, syn_count, syn_count / ack_count),
+        request_freq = n()
+      ) %>%
+      ungroup() %>%
+      left_join(saved_ips, by = c("src" = "ip")) %>%
+      mutate(
+        suspicious_ip = ifelse(rating != "harmless", 1, 0),
+        unfound_country = ifelse(country_src == "unfound", 1, 0)
+      ) %>%
+      select(syn_count, ack_count, syn_ack_ratio, request_freq, suspicious_ip, unfound_country)
+    
+    return(features)
+  }
+  
+  # Функция обучения модели 
+  train_iso_forest <- function(features) {
+    model <- isolation.forest(
+      features,
+      ntrees = 100,
+      seed = 42,
+      nthreads = 4
+    )
+    saveRDS(model, model_path)
+    return(model)
   }
   
   # Функция для парсинга файла conn.log от Zeek
@@ -184,6 +219,70 @@ server <- function(input, output, session) {
       
       map_points <- create_map_points(parsed_data_csv, world.cities)
       
+      model <- reactiveVal(NULL)
+      
+      # Загрузка или обучение модели
+      if (file.exists(model_path)) {
+        model(readRDS(model_path))
+      } else {
+        model(train_iso_forest(features))
+      }
+      
+      #Извлечение признаков
+      features <- extract_features(
+        parsed_data_csv, 
+        read.csv("saved_ips.csv")
+      )
+      
+      if(is.null(model())) {
+        features <- extract_features(parsed_data_csv, vroom("saved_ips.csv"))
+        new_model <- isolation.forest(features, ntrees = 100, seed = 42)
+        model(new_model)
+        saveRDS(new_model, model_path)
+      }
+      
+      
+      #Обработчик переобучения
+      observeEvent(input$retrain_btn, {
+        features <- extract_features(parsed_data_csv, read.csv("saved_ips.csv"))
+        new_model <- isolation.forest(features, ntrees = 100, seed = 42)
+        model(new_model)
+        saveRDS(new_model, model_path)
+        showNotification("Модель успешно переобучена!", type = "message")
+      })
+      
+      #Реактивное вычисление аномалий с учетом порога
+      anomaly_data <- reactive({
+        req(input$anomaly_threshold)
+        parsed_data_csv %>%
+          mutate(
+            is_anomaly = ifelse(anomaly_score > input$anomaly_threshold, "ANOMALY", "NORMAL"),
+            is_anomaly = factor(is_anomaly, levels = c("NORMAL", "ANOMALY"))
+          )
+      })
+      
+      # Реактивное вычисление данных с учетом всех фильтров - в теории должно работать по факту не работает пока
+      filtered_anomaly_data <- reactive({
+        req(anomaly_data())
+        
+        data <- anomaly_data()
+        
+        data
+      })
+      
+      # Предсказание с динамическим порогом
+      anomaly_scores <- predict(model(), features)
+      
+      # Обновляем данные с результатами
+      parsed_data_csv <-
+        parsed_data_csv %>%
+          mutate(
+            anomaly_score = anomaly_scores,
+            is_anomaly = anomaly_score > input$anomaly_threshold
+          )
+      
+      
+      
       if (nrow(map_points) > 0) {
         group_ranges <- map_points %>%
           group_by(group) %>%
@@ -231,12 +330,51 @@ server <- function(input, output, session) {
             )
         }
         
+        top_map_points <- function() {
+          points <- map_points %>%
+            arrange(desc(ip_count)) %>%
+            select(country_src, ip_count) %>%
+            filter(country_src != 'local') %>%
+            rename(country = country_src, count = ip_count) %>%
+            head(3)
+          
+          datatable(
+          points,
+          rownames = FALSE,
+          options = list(
+            dom = 't',
+            ordering = FALSE,
+            autoWidth = TRUE,
+            initComplete = JS(
+              "function(settings, json) {",
+              "  $(this.api().table().header()).css({'background-color': '#F82B26', 'color': '#0E1F27', 'fontSize': '18px'});",
+              "}"
+            )
+          ) 
+          ) %>% formatStyle(
+            columns = names(points),
+            target = "cell",
+            color = "#4ECDC4",
+            border = "1px solid #4ECDC4",
+            fontFamily = "Courier New, monospace",
+            fontWeight =  700,
+            fontSize = '16px'
+          )
+        }
+        
+        output$top_map_points <- renderDT({ top_map_points() })
+        
         output$map <- renderLeaflet({ base_map() })
       }
       
       ips_table <- function() {
+        
+        req(anomaly_data())
+        
         datatable(
-          parsed_data_csv %>% select(-uid),
+          anomaly_data() %>% mutate(
+            anomaly_score = round(anomaly_score, 3)
+          ) %>% select(-uid),
           rownames = FALSE,
           options = list(
             pageLength = 5,
@@ -247,8 +385,10 @@ server <- function(input, output, session) {
               "function(settings, json) {",
               "  $(this.api().table().header()).css({'background-color': '#F82B26', 'color': '#0E1F27', 'fontSize': '18px'});",
               "}"
-            )
-          )
+            ),
+            targets = which(names(anomaly_data()) == "is_anomaly") - 1
+          ),
+          escape = FALSE
         ) %>% formatStyle(
           columns = names(parsed_data_csv %>% select(-uid)),
           target = "cell",
@@ -261,6 +401,25 @@ server <- function(input, output, session) {
       }
       
       output$ip_table <- renderDT({ ips_table() })
+      
+      unique_count_src <- parsed_data_csv %>% distinct(src) %>% nrow()
+      output$label_uniq_src <- renderText({"Количество уникальных ip-src"})
+      output$text_uniq_src <- renderText({unique_count_src})
+      
+      unique_count_dst <- parsed_data_csv %>% distinct(dst) %>% nrow()
+      output$label_uniq_dst <- renderText({"Количество уникальных ip-dst"})
+      output$text_uniq_dst <- renderText({unique_count_dst})
+      
+      syn_count <- parsed_data_csv %>%
+        filter(str_detect(history, "S") & !str_detect(history, "A")) %>% nrow()
+      output$label_count_syn <- renderText({"Количество syn"})
+      output$text_count_syn <- renderText({syn_count})
+      
+      ack_count <- parsed_data_csv %>%
+        filter(str_detect(history, "S") & str_detect(history, "A") | str_detect(history, "F")) %>% nrow()
+      output$label_count_ack <- renderText({"Количество ack"})
+      output$text_count_ack <- renderText({ack_count})
+      
       
       filtered_data <- reactive({
         req(input$ip_table_rows_all)
@@ -647,6 +806,14 @@ server <- function(input, output, session) {
         
         output$traffic_plot <- renderPlotly({ traffic_plot() })
         
+        count_traffic_src <- data_traffic_value %>% select(sent_bytes) %>% summarise(total = sum(sent_bytes)) %>% pull(total) %>% .[1]
+        output$label_src_traffic <- renderText({"Полученные байты"})
+        output$text_src_traffic <- renderText({count_traffic_src})
+        
+        count_traffic_dst <- data_traffic_value %>% select(received_bytes) %>% summarise(total = sum(received_bytes)) %>% pull(total) %>% .[1]
+        output$label_dst_traffic <- renderText({"Отправленные байты"})
+        output$text_dst_traffic <- renderText({count_traffic_dst})
+        
         # Лоадер и инпут
         output$file_loaded <- reactive({
           !is.null(parsed_data_csv)
@@ -681,6 +848,47 @@ server <- function(input, output, session) {
             file.rename(res, file)
           }
         )
+        
+        # Визуализация аномалий
+        output$anomaly_plot <- renderPlotly({
+          req(anomaly_data())
+          
+          plot_data <- anomaly_data()
+          
+          plot_ly(plot_data, x = ~time, y = ~anomaly_score, 
+                  color = ~is_anomaly, 
+                  colors = c("NORMAL" = "#4ECDC4", "ANOMALY" = "#F82B26"),
+                  type = "scatter", mode = "markers",
+                  text = ~paste("IP:", src, "<br>Рейтинг:", round(anomaly_score, 2))) %>%
+            layout(
+              hovermode = "x unified",
+              font = list(color = '#4ECDC4', size = 18, family = 'Consolas'),
+              title = list(text = paste("<b>Аномальная активность (порог:", input$anomaly_threshold, ")</b>"), x = 0.5, y = 1),
+              yaxis = list(
+                title = "Рейтинг", 
+                gridcolor = "rgba(78, 205, 196, 0.4)",
+                zerolinecolor = "#e1e1e1"
+              ),
+              xaxis = list(
+                title = "Время", 
+                gridcolor = "rgba(78, 205, 196, 0.4)",
+                zerolinecolor = "#e1e1e1"
+              ),
+              plot_bgcolor = "#0E1F27",
+              paper_bgcolor = "#0E1F27",
+              shapes = list(
+                list(
+                  type = "line",
+                  y0 = input$anomaly_threshold,
+                  y1 = input$anomaly_threshold,
+                  x0 = 0,
+                  x1 = 1,
+                  xref = "paper",
+                  line = list(color = "#F82B26", dash = "dot")
+                )
+              )
+            )
+        })
     }
   })
 }
