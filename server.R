@@ -16,7 +16,6 @@ library(shinybusy)
 library(vroom)
 library(isotree) 
 
-model_path <- "isolation_forest_model.rds"
 api_url <- 'https://www.virustotal.com/api/v3/ip_addresses/'
 
 server <- function(input, output, session) {
@@ -54,8 +53,8 @@ server <- function(input, output, session) {
     features <- conn_data %>%
       group_by(src, dst) %>%
       mutate(
-        syn_count = sum(str_count(history, "S")),
-        ack_count = sum(str_count(history, "A")),
+        syn_count = sum(conn_state %in% c("S0", "REJ")),
+        ack_count = sum(!(conn_state %in% c("S0", "REJ"))),
         syn_ack_ratio = ifelse(ack_count == 0, syn_count, syn_count / ack_count),
         request_freq = n()
       ) %>%
@@ -78,7 +77,6 @@ server <- function(input, output, session) {
       seed = 42,
       nthreads = 4
     )
-    saveRDS(model, model_path)
     return(model)
   }
   
@@ -178,11 +176,26 @@ server <- function(input, output, session) {
     write.csv(empty_df, "saved_ips.csv", row.names = FALSE)
   }
   
-  world.cities <- maps::world.cities %>% # Получение данных из таблицы world.cities
-    filter(capital == 1) %>% # Получить только столицы
-    select(country.etc, lat, long, name) %>% # Выбрать из таблицы название страны, город, широту, долготу
-    mutate(code = countrycode(country.etc, "country.name", "iso2c")) %>% # Полученеи кода страны
-    filter(!is.na(code)) # Фильтрация NA
+  all_countries <- countrycode::codelist %>%
+    select(country.name.en, iso2c) %>%
+    filter(!is.na(iso2c)) %>%
+    distinct()
+  
+  country_coords <- maps::world.cities %>%
+    filter(capital == 1 | pop > 500000) %>% 
+    group_by(country.etc) %>%
+    slice(1) %>%
+    ungroup() %>%
+    select(country.etc, name, lat, long)
+  
+  world_countries <- all_countries %>%
+    left_join(country_coords, by = c("country.name.en" = "country.etc")) %>%
+    filter(!is.na(lat)) %>% 
+    rename(
+      country.etc = country.name.en,
+      code = iso2c
+    ) %>%
+    select(country.etc, lat, long, name, code)
   
   observeEvent(input$fileData, { # Добавление слушателя событий, для отслеживания загрузки
     req(input$fileData) # Ожидание получения файла
@@ -215,39 +228,32 @@ server <- function(input, output, session) {
     })
     
     if (file_path != FALSE) {
+      saved_ips <- vroom("saved_ips.csv")
       parsed_data_csv <- vroom(file_path)
       
-      map_points <- create_map_points(parsed_data_csv, world.cities)
+      map_points <- create_map_points(parsed_data_csv, world_countries)
       
       model <- reactiveVal(NULL)
-      
-      # Загрузка или обучение модели
-      if (file.exists(model_path)) {
-        model(readRDS(model_path))
-      } else {
-        model(train_iso_forest(features))
-      }
       
       #Извлечение признаков
       features <- extract_features(
         parsed_data_csv, 
-        read.csv("saved_ips.csv")
+        saved_ips
       )
       
+      model(train_iso_forest(features))
+      
       if(is.null(model())) {
-        features <- extract_features(parsed_data_csv, vroom("saved_ips.csv"))
+        features <- extract_features(parsed_data_csv, saved_ips)
         new_model <- isolation.forest(features, ntrees = 100, seed = 42)
         model(new_model)
-        saveRDS(new_model, model_path)
       }
-      
       
       #Обработчик переобучения
       observeEvent(input$retrain_btn, {
-        features <- extract_features(parsed_data_csv, read.csv("saved_ips.csv"))
+        features <- extract_features(parsed_data_csv, saved_ips)
         new_model <- isolation.forest(features, ntrees = 100, seed = 42)
         model(new_model)
-        saveRDS(new_model, model_path)
         showNotification("Модель успешно переобучена!", type = "message")
       })
       
@@ -280,8 +286,6 @@ server <- function(input, output, session) {
             anomaly_score = anomaly_scores,
             is_anomaly = anomaly_score > input$anomaly_threshold
           )
-      
-      
       
       if (nrow(map_points) > 0) {
         group_ranges <- map_points %>%
@@ -411,13 +415,13 @@ server <- function(input, output, session) {
       output$text_uniq_dst <- renderText({unique_count_dst})
       
       syn_count <- parsed_data_csv %>%
-        filter(str_detect(history, "S") & !str_detect(history, "A")) %>% nrow()
-      output$label_count_syn <- renderText({"Количество syn"})
+        filter((str_detect(conn_state, "S0") | str_detect(conn_state, "REJ")) & protocol=="tcp") %>% nrow()
+      output$label_count_syn <- renderText({"Количество не установленных tcp-соединений"})
       output$text_count_syn <- renderText({syn_count})
       
       ack_count <- parsed_data_csv %>%
-        filter(str_detect(history, "S") & str_detect(history, "A") | str_detect(history, "F")) %>% nrow()
-      output$label_count_ack <- renderText({"Количество ack"})
+        filter(!(str_detect(conn_state, "S0") | str_detect(conn_state, "REJ")) & protocol=="tcp") %>% nrow()
+      output$label_count_ack <- renderText({"Количество установленных tcp-соединений"})
       output$text_count_ack <- renderText({ack_count})
       
       
@@ -639,116 +643,141 @@ server <- function(input, output, session) {
       
       output$ipActivityPlot <- renderPlotly({ ip_activity_plot() })
       
-      # График SYN
+      top_dst_ip <- parsed_data_csv %>% group_by(dst) %>% summarise(total = n()) %>% arrange(desc(total)) %>% head(1) %>% pull(dst) %>% .[1]
+      top_port_dst_ip <- parsed_data_csv %>% filter(dst==top_dst_ip) %>% group_by(dst_port) %>% summarise(total = n()) %>% arrange(desc(total)) %>% head(1) %>% pull(dst_port) %>% .[1]
+      count_uniq_ip_address <- parsed_data_csv %>% filter(dst == top_dst_ip & dst_port == top_port_dst_ip) %>% summarise(unique_src = n_distinct(src)) %>% pull(unique_src) %>% .[1]
+      
+      
+      output$label_top_dst_ip <- renderText({"Самый используемый ip-dst:port"})
+      output$text_top_dst_ip <- renderText({paste(top_dst_ip, top_port_dst_ip, sep=":")})
+      
+      # График подключений
       df <- reactive({
         parsed_data_csv
       })
+      
+      observe({
+        data <- df() %>% filter(protocol == 'tcp')
         
-        # Обновляем выборки для фильтров
-        observe({
-          data <- df() %>% filter(protocol == 'tcp')
-          
-          updateSelectInput(session, "date_select", 
-                            choices = unique(data$date),
-                            selected = unique(data$date)[1])
-          
-          updateSelectInput(session, "ip_select",
-                            choices = unique(data$dst),
-                            selected = unique(data$dst)[1])
-          
-          updateSelectInput(session, "port_select",
-                            choices = unique(data$dst_port),
-                            selected = unique(data$dst_port)[1])
-        })
+        updateSelectInput(session, "date_select", 
+                          choices = unique(data$date),
+                          selected = unique(data$date)[1])
         
-        # Подготовка данных для графиков
-        plot_data <- reactive({
-          req(input$date_select)
-          
-          data <- df() %>%
-            filter(date == input$date_select)
-          
-          if (!is.null(input$ip_select) && length(input$ip_select) > 0) {
-            data <- data %>% filter(dst %in% input$ip_select)
-          }
-          
-          if (!is.null(input$port_select) && length(input$port_select) > 0) {
-            data <- data %>% filter(dst_port %in% input$port_select)
-          }
-          
-          # Создаем datetime колонку для группировки
-          data <- data %>%
-            mutate(datetime = dmy_hms(paste(date, time)))
-          
-          # Группируем по выбранному временному интервалу
-          if (input$time_group == "hour") {
-            data <- data %>%
-              mutate(time_group = floor_date(datetime, "hour"))
-          } else if (input$time_group == "minute") {
-            data <- data %>%
-              mutate(time_group = floor_date(datetime, "minute"))
-          } else {
-            data <- data %>%
-              mutate(time_group = floor_date(datetime, "second"))
-          }
-          
-          # Считаем количество SYN и ACK
-          syn_data <- data %>%
-            filter(str_detect(history, "S") & !str_detect(history, "A")) %>%
-            group_by(time_group) %>%
-            summarise(syn_count = n(), .groups = "drop")
-          
-          ack_data <- data %>%
-            filter(str_detect(history, "ShA")) %>%
-            group_by(time_group) %>%
-            summarise(ack_count = n(), .groups = "drop")
-          
-          # Объединяем данные
-          full_join(syn_data, ack_data, by = "time_group") %>%
-            replace_na(list(syn_count = 0, ack_count = 0)) %>%
-            arrange(time_group)
-        })
+        updateSelectInput(session, "ip_select",
+                          choices = unique(data$dst),
+                          selected = unique(data$dst)[1])
+      })
+      
+      observe({
+        req(input$ip_select)
         
-        syn_ack_plot <- function() {
-          data <- plot_data()
-          
-          if (nrow(data) == 0) {
-            return(plotly_empty() %>% layout(title = "Нет данных для отображения"))
-          }
-          
-          # Определяем формат подписей в зависимости от группировки
-          time_format <- if (input$time_group == "hour") "%H:%M" 
-          else if (input$time_group == "minute") "%H:%M" 
-          else "%H:%M:%S"
-          
-          plot_ly(data) %>%
-            add_lines(x = ~time_group, y = ~syn_count, name = "SYN", 
-                      line = list(color = '#F82B26'), yaxis = "y1") %>%
-            add_lines(x = ~time_group, y = ~ack_count, name = "ACK", 
-                      line = list(color = '#4ECDC4'), yaxis = "y1") %>%
-            layout(
-              font = list(color = '#4ECDC4', size = 18, family = 'Consolas'),
-              title = list(text = "<b>Сравнение количества SYN и ACK пакетов</b>", x = 0.5, y = 1),
-              xaxis = list(
-                title = "Время",
-                type = "date",
-                tickformat = time_format,
-                gridcolor = 'rgba(78, 205, 196, 0.4)'
-              ),
-              yaxis = list(
-                title = "Количество пакетов",
-                side = "left",
-                gridcolor = 'rgba(78, 205, 196, 0.4)'
-              ),
-              legend = list(x = 0.1, y = 0.9),
-              hovermode = "x unified",
-              paper_bgcolor = "#0E1F27",
-              plot_bgcolor = "#0E1F27"
-            )
+        data <- df() %>% 
+          filter(protocol == 'tcp' & dst %in% input$ip_select)
+        
+        updateSelectInput(session, "port_select",
+                          choices = unique(data$dst_port),
+                          selected = unique(data$dst_port)[1])
+      })
+      
+      plot_data <- reactive({
+        req(input$date_select)
+        
+        data <- df() %>%
+          filter(date == input$date_select)
+        
+        if (!is.null(input$ip_select) && length(input$ip_select) > 0) {
+          data <- data %>% filter(dst %in% input$ip_select)
         }
         
-        # Создаем комбинированный график
-        output$syn_ack_plot <- renderPlotly({ syn_ack_plot() })
+        if (!is.null(input$port_select) && length(input$port_select) > 0) {
+          data <- data %>% filter(dst_port %in% input$port_select)
+        }
+        
+        data <- data %>%
+          mutate(datetime = dmy_hms(paste(date, time)))
+        
+        if (input$time_group == "hour") {
+          data <- data %>%
+            mutate(time_group = floor_date(datetime, "hour"))
+        } else if (input$time_group == "minute") {
+          data <- data %>%
+            mutate(time_group = floor_date(datetime, "minute"))
+        } else {
+          data <- data %>%
+            mutate(time_group = floor_date(datetime, "second"))
+        }
+        
+        syn_data <- data %>%
+          filter(str_detect(conn_state, "S0") | str_detect(conn_state, "REJ")) %>%
+          group_by(time_group) %>%
+          summarise(syn_count = n(), .groups = "drop")
+        
+        ack_data <- data %>%
+          filter(!(str_detect(conn_state, "S0") | str_detect(conn_state, "REJ"))) %>%
+          group_by(time_group) %>%
+          summarise(ack_count = n(), .groups = "drop")
+        
+        full_join(syn_data, ack_data, by = "time_group") %>%
+          replace_na(list(syn_count = 0, ack_count = 0)) %>%
+          arrange(time_group)
+      })
+      
+      syn_ack_plot <- function() {
+        data <- plot_data()
+        
+        time_format <- if (input$time_group == "hour") "%H:%M" 
+        else if (input$time_group == "minute") "%H:%M" 
+        else "%H:%M:%S"
+        
+        plot_ly(data) %>%
+          add_lines(x = ~time_group, y = ~syn_count, name = "Не установлено", 
+                    line = list(color = '#F82B26'), yaxis = "y1") %>%
+          add_lines(x = ~time_group, y = ~ack_count, name = "Установлено", 
+                    line = list(color = '#4ECDC4'), yaxis = "y1") %>%
+          layout(
+            font = list(color = '#4ECDC4', size = 18, family = 'Consolas'),
+            title = list(text = "<b>Tcp-соединение</b>", x = 0.5, y = 1),
+            xaxis = list(
+              title = "Время",
+              type = "date",
+              tickformat = time_format,
+              gridcolor = 'rgba(78, 205, 196, 0.4)'
+            ),
+            yaxis = list(
+              title = "Количество пакетов",
+              side = "left",
+              gridcolor = 'rgba(78, 205, 196, 0.4)'
+            ),
+            legend = list(x = 0.1, y = 0.9),
+            hovermode = "x unified",
+            paper_bgcolor = "#0E1F27",
+            plot_bgcolor = "#0E1F27"
+          )
+      }
+      
+      output$syn_ack_plot <- renderPlotly({ syn_ack_plot() })
+        
+        # Вывод аномалий
+        check_anomaly <- reactive({
+          data <- plot_data()
+          
+          total_syn <- sum(data$syn_count, na.rm = TRUE)
+          total_ack <- sum(data$ack_count, na.rm = TRUE)
+          
+          if (total_ack > 0) {
+            ratio <- total_syn / total_ack
+            
+            if (ratio > 0.15) {
+              return("Возможна аномальная активность")
+            }
+          }
+          
+          return("Аномалий нет")
+        })
+        
+        output$anomaly_status <- renderText({
+          check_anomaly()
+        })
         
         # График с объемом трафика
         data_traffic_value <- parsed_data_csv %>% mutate(
@@ -814,41 +843,6 @@ server <- function(input, output, session) {
         output$label_dst_traffic <- renderText({"Отправленные байты"})
         output$text_dst_traffic <- renderText({count_traffic_dst})
         
-        # Лоадер и инпут
-        output$file_loaded <- reactive({
-          !is.null(parsed_data_csv)
-        })
-        
-        outputOptions(output, "file_loaded", suspendWhenHidden = FALSE)
-        
-        hide_spinner()
-        
-        output$download_html <- downloadHandler(
-          file_name <- paste0(
-            format(Sys.time(), "%d.%m.%Y_%H:%M:%S"),
-            "_report.html"
-          ),
-          content = function(file) {
-            res <- rmarkdown::render(
-              "report_conf/report_template_html.Rmd",
-              params = list(
-                draw_map = base_map,
-                draw_ips_table = ips_table,
-                draw_chart_protocols = pie_chart_protocols,
-                draw_chart_top_src_ip = pie_chart_top_src_ip,
-                draw_chart_top_dst_ip = pie_chart_top_dst_ip,
-                draw_chart_top_src_port = pie_chart_top_src_port,
-                draw_chart_top_dst_port = pie_chart_top_dst_port,
-                draw_ip_activity = ip_activity_plot,
-                draw_syn_ack_plot = syn_ack_plot,
-                draw_traffic_plot = traffic_plot,
-                title_file = file_name
-              )
-            )
-            file.rename(res, file)
-          }
-        )
-        
         # Визуализация аномалий
         output$anomaly_plot <- renderPlotly({
           req(anomaly_data())
@@ -889,6 +883,41 @@ server <- function(input, output, session) {
               )
             )
         })
+        
+        # Лоадер и инпут
+        output$file_loaded <- reactive({
+          !is.null(parsed_data_csv)
+        })
+        
+        outputOptions(output, "file_loaded", suspendWhenHidden = FALSE)
+        
+        hide_spinner()
+        
+        output$download_html <- downloadHandler(
+          file_name <- paste0(
+            format(Sys.time(), "%d.%m.%Y_%H:%M:%S"),
+            "_report.html"
+          ),
+          content = function(file) {
+            res <- rmarkdown::render(
+              "report_conf/report_template_html.Rmd",
+              params = list(
+                draw_map = base_map,
+                draw_ips_table = ips_table,
+                draw_chart_protocols = pie_chart_protocols,
+                draw_chart_top_src_ip = pie_chart_top_src_ip,
+                draw_chart_top_dst_ip = pie_chart_top_dst_ip,
+                draw_chart_top_src_port = pie_chart_top_src_port,
+                draw_chart_top_dst_port = pie_chart_top_dst_port,
+                draw_ip_activity = ip_activity_plot,
+                draw_syn_ack_plot = syn_ack_plot,
+                draw_traffic_plot = traffic_plot,
+                title_file = file_name
+              )
+            )
+            file.rename(res, file)
+          }
+        )
     }
   })
 }

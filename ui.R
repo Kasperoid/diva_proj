@@ -100,9 +100,9 @@ ui <- fluidPage(
       margin-top: 30px;
     }
     
-    #DataTables_Table_0_length, #DataTables_Table_0_filter, #DataTables_Table_0_info, #DataTables_Table_0_paginate {
+    .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_paginate {
       font-size: 18px;
-      color: #7ED3D6;
+      color: #7ED3D6 !important;
     }
     
     .dataTables_wrapper .dataTables_paginate .paginate_button:hover, .dataTables_wrapper .dataTables_paginate .paginate_button.current, .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
@@ -126,17 +126,23 @@ ui <- fluidPage(
       text-align: center;
       padding: 10px;
       border: 1px solid #4ECDC4;
-      width: 300px;
+      min-width: 300px;
       border-radius: 10px;
     }
     
-    #label_uniq_src,  #label_uniq_dst, #label_count_syn, #label_count_ack, #label_src_traffic, #label_dst_traffic{
+    #label_uniq_src,  #label_uniq_dst, #label_count_syn, #label_count_ack, #label_src_traffic, #label_dst_traffic, #label_top_dst_ip, #anomaly_status{
       font-size: 22px;
       color: #7ED3D6;
     }
     
     #text_uniq_src, #text_uniq_dst, #text_count_syn, #text_count_ack, #text_src_traffic, #text_dst_traffic {
       font-size: 64px;
+      font-weight: 800;
+      color: #F82B26;
+    }
+    
+    #text_top_dst_ip {
+      font-size: 32px;
       font-weight: 800;
       color: #F82B26;
     }
@@ -185,10 +191,14 @@ ui <- fluidPage(
       padding: 15px;
     }
     
-    .traffic-value-container {
+    .graph-info-container {
       display: flex;
       gap: 10px;
       align-items: center;
+    }
+    
+    .traffic-value-container {
+      margin-bottom: 10px;
     }
     
     .graph-container:last-child {
@@ -326,7 +336,7 @@ ui <- fluidPage(
         )
       ),
       
-      div(class="traffic-value-container",
+      div(class="traffic-value-container graph-info-container",
         div( class="graph-container", plotlyOutput("traffic_plot", height="600px")),
         
         div(class="traffic-cards-container",
@@ -336,46 +346,53 @@ ui <- fluidPage(
         ),
       ),
       
-      div( class="graph-container",
-         sidebarLayout(
-           sidebarPanel(
-             radioButtons("ipType", "Тип IP-адреса:",
-                          choices = c("Источник (src)" = "src",
-                                      "Получатель (dst)" = "dst"),
-                          selected = "src"),
-             selectInput("selectedIP", "Выберите IP-адрес:",
-                         choices = NULL),
-             selectInput("timeGrouping", "Группировка времени:",
-                         choices = c("По секундам" = "sec",
-                                     "По минутам" = "min",
-                                     "По часам" = "hour"))
-           ),
-           mainPanel(
-             plotlyOutput("ipActivityPlot", height = "800px")
-           )
-         )
+      div(class='graph-info-container',
+          div( class="graph-container",
+               sidebarLayout(
+                 sidebarPanel(
+                   radioButtons("ipType", "Тип IP-адреса:",
+                                choices = c("Источник (src)" = "src",
+                                            "Получатель (dst)" = "dst"),
+                                selected = "src"),
+                   selectInput("selectedIP", "Выберите IP-адрес:",
+                               choices = NULL),
+                   selectInput("timeGrouping", "Группировка времени:",
+                               choices = c("По секундам" = "sec",
+                                           "По минутам" = "min",
+                                           "По часам" = "hour"))
+                 ),
+                 mainPanel(
+                   plotlyOutput("ipActivityPlot", height = "800px")
+                 )
+               )
+          ),
+          
+          div(class="card-info-container", textOutput("label_top_dst_ip"), textOutput("text_top_dst_ip")),
       ),
       
-      div(class="graph-container", 
-        sidebarLayout(
-          sidebarPanel(
-            width = 3,
-            selectInput("date_select", "Выберите дату:", choices = NULL),
-            selectInput("ip_select", "Выберите IP назначения:", 
-                        choices = NULL, multiple = TRUE),
-            selectInput("port_select", "Выберите порт назначения:", 
-                        choices = NULL, multiple = TRUE),
-            radioButtons("time_group", "Группировка по времени:",
-                         choices = c("Часы" = "hour", 
-                                     "Минуты" = "minute", 
-                                     "Секунды" = "second"),
-                         selected = "minute")
+      div(class="graph-info-container",
+          div(class="graph-container", 
+              sidebarLayout(
+                sidebarPanel(
+                  width = 3,
+                  selectInput("date_select", "Выберите дату:", choices = NULL),
+                  selectInput("ip_select", "Выберите IP назначения:", 
+                              choices = NULL, multiple = TRUE),
+                  selectInput("port_select", "Выберите порт назначения:", 
+                              choices = NULL, multiple = TRUE),
+                  radioButtons("time_group", "Группировка по времени:",
+                               choices = c("Часы" = "hour", 
+                                           "Минуты" = "minute", 
+                                           "Секунды" = "second"),
+                               selected = "minute")
+                ),
+                mainPanel(
+                  width = 9,
+                  plotlyOutput("syn_ack_plot", height = "600px")
+                )
+              )
           ),
-          mainPanel(
-            width = 9,
-            plotlyOutput("syn_ack_plot", height = "600px")
-          )
-        )
+          div(class="card-info-container", textOutput("anomaly_status"))
       )
     )
   )
