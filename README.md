@@ -10,7 +10,7 @@
   </tr>
   <tr>
     <td><img src="./readme_img/zeek.png" width="128" height="128"/><p align="center"><b>WireShark</b></p></td>
-    <td><img src="./readme_img/pcap.jpg" width="128" height="128"/><p align="center"><b>JSON</b></p></td>
+    <td><img src="./readme_img/pcap.jpg" width="128" height="128"/><p align="center"><b>PCAP</b></p></td>
     <td><img src="./readme_img/dplyr.png" width="128"/><p align="center"><b>Dplyr</b></p></td>
     <td><img src="./readme_img/virustotal.png" width="128"/><p align="center"><b>API VirusTotal</b></p></td>
   </tr>
