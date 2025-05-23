@@ -132,7 +132,7 @@ server <- function(input, output, session) {
   }
   
   create_map_points <- function(ips_data, world_data) {
-    ips_data <- ips_data %>% filter(country_src != "unfound")
+    ips_data <- ips_data %>% filter(country_src != "unfound") %>% filter(country_src != 'local')
     if (nrow(ips_data) != 0) {
       ip_counts <- ips_data %>% 
         group_by(country_src) %>%
