@@ -793,7 +793,7 @@ server <- function(input, output, session) {
           plot_ly(data_traffic_value, x = ~datetime) %>%
             add_trace(
               y = ~sent_bytes,
-              name = "Получено",
+              name = "Отправлено запросов",
               type = 'scatter',
               mode = 'lines',
               fill = 'tozeroy',
@@ -802,7 +802,7 @@ server <- function(input, output, session) {
             ) %>%
             add_trace(
               y = ~received_bytes,
-              name = "Отправлено",
+              name = "Получено ответов",
               type = 'scatter',
               mode = 'lines',
               fill = 'tozeroy',

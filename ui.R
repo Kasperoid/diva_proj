@@ -125,7 +125,7 @@ ui <- fluidPage(
     .card-info-container {
       text-align: center;
       padding: 10px;
-      border: 1px solid #4ECDC4;
+      border: 1px solid #F82B26;
       min-width: 300px;
       border-radius: 10px;
     }
